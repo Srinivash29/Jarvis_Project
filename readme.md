@@ -13,7 +13,6 @@ An autonomous, multi-modal personal AI assistant capable of real-time voice conv
 - **🎙️ Real-Time 2-Way WhatsApp Voice Bridge**: Automatically calls contacts on WhatsApp Desktop, captures remote voice via WASAPI loopback, detects speech via adaptive VAD, transcribes via CUDA-accelerated aster-whisper, generates contextual responses via Ollama (llama3.2), and speaks back into the call using EdgeTTS and Virtual Audio Cable with self-echo cancellation.
 - **🧠 Hybrid Intelligence**: Works seamlessly with Google Gemini Live API for cloud multimodal streaming, or completely offline with local LLMs (Ollama llama3.2, llama3.1, qwen, gemma).
 - **🚀 GPU-Accelerated Speech Processing**: Native CUDA support on NVIDIA GPUs (e.g. RTX 3050+) for ultra-fast Whisper speech-to-text with automatic graceful CPU fallback (int8).
-- **🚁 Drone Flight Control Plugin**: Autonomous physical and simulated drone control for KY-UFO drones with automatic calibration and countdown sequence.
 - **🖥️ Desktop & OS Automation**: Full control over windows, system volume, browser navigation, YouTube, files, apps, and hardware telemetry.
 - **🧩 Zero-Code Plugin Engine**: Drop any .py file into plugins/ and JARVIS dynamically registers the skill on launch with crash isolation.
 
@@ -192,11 +191,9 @@ jarvis/
 │   ├── whatsapp_voice_bridge.py     # 2-way audio call state machine & VAD
 │   ├── whatsapp_desktop_call.py     # WhatsApp Desktop UIA / keyboard automation
 │   ├── whatsapp_monitor.py          # Notification monitoring
-│   └── ky_ufo_drone.py              # Drone flight control plugin
 ├── tests/
 │   ├── test_whatsapp_voice_bridge.py # 50 unit tests for bridge and audio safety
 │   ├── test_whatsapp_desktop_call.py # Tests for UI automation
-│   └── test_ky_ufo_drone.py         # Tests for drone telemetry & commands
 └── config/
     └── api_keys.json.example        # Configuration template
 `
