@@ -24,7 +24,7 @@ An autonomous, multi-modal personal AI assistant capable of real-time voice conv
 | Component | Minimum Requirement | Recommended |
 |---|---|---|
 | **Operating System** | Windows 10/11 (64-bit) | Windows 11 (64-bit) |
-| **Python** | Python 3.11 | Python 3.11 |
+| **Python** | Python 3.12 | Python 3.12 |
 | **GPU (Optional)** | CPU supported | NVIDIA GPU (CUDA 11/12) for fast Whisper STT |
 | **Virtual Audio** | Required for WhatsApp Voice Bridge | [VB-Audio Virtual Cable](https://vb-audio.com/Cable/) |
 | **Local LLM** | Ollama | [Ollama](https://ollama.com/) with llama3.2 |
