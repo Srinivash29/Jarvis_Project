@@ -4,7 +4,7 @@
 [![Tests](https://img.shields.io/badge/unit%20tests-50%20passed-brightgreen.svg)]()
 [![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
 
-An autonomous, multi-modal personal AI assistant capable of real-time voice conversations, vision, system automation, autonomous phone calls over WhatsApp Desktop, drone control, and local offline intelligence.
+An autonomous, multi-modal personal AI assistant with real-time voice conversations, vision, system automation, WhatsApp Desktop calling, and local offline intelligence.
 
 ---
 
