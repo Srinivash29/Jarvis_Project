@@ -1862,6 +1862,60 @@ class MainWindow(QMainWindow):
             apply_ui_accent(_ui_color)
 
         self.setWindowTitle(f"{_display} — MARK LI")
+
+        # Global HUD polish: subtle focus states, refined scrollbars and tooltips.
+        # Existing widget-specific styles and HUD animations remain unchanged.
+        self.setStyleSheet(self.styleSheet() + """
+            QToolTip {
+                background: #061722;
+                color: #d8f8ff;
+                border: 1px solid #0d7899;
+                padding: 6px 9px;
+                border-radius: 5px;
+            }
+            QScrollBar:vertical {
+                background: #010d14;
+                width: 9px;
+                margin: 2px 1px;
+                border: none;
+            }
+            QScrollBar::handle:vertical {
+                background: #12465b;
+                min-height: 28px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #00a8cf;
+            }
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {
+                height: 0px;
+                background: transparent;
+            }
+            QScrollBar::add-page:vertical,
+            QScrollBar::sub-page:vertical {
+                background: transparent;
+            }
+            QScrollBar:horizontal {
+                background: #010d14;
+                height: 9px;
+                margin: 1px 2px;
+                border: none;
+            }
+            QScrollBar::handle:horizontal {
+                background: #12465b;
+                min-width: 28px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: #00a8cf;
+            }
+            QScrollBar::add-line:horizontal,
+            QScrollBar::sub-line:horizontal {
+                width: 0px;
+                background: transparent;
+            }
+        """)
         self.setMinimumSize(_MIN_W, _MIN_H)
         self.resize(_DEFAULT_W, _DEFAULT_H)
 
