@@ -602,14 +602,33 @@ class MetricBar(QWidget):
         super().__init__(parent)
         self._label = label
         self._color = color
-        self._value = 0.0       # 0–100
+        self._value = 0.0       # smoothly rendered value (0–100)
+        self._target_value = 0.0
         self._text  = "--"
-        self.setFixedHeight(38)
+        self.setFixedHeight(42)
         self.setMinimumWidth(80)
 
+        # Ease metric changes instead of snapping the bars every refresh.
+        self._anim_timer = QTimer(self)
+        self._anim_timer.setInterval(16)
+        self._anim_timer.timeout.connect(self._animate_value)
+
     def set_value(self, pct: float, text: str):
-        self._value = max(0.0, min(100.0, pct))
-        self._text  = text
+        self._target_value = max(0.0, min(100.0, pct))
+        self._text = text
+        if not self._anim_timer.isActive() and abs(self._target_value - self._value) > 0.15:
+            self._anim_timer.start()
+        else:
+            self.update()
+
+    def _animate_value(self):
+        delta = self._target_value - self._value
+        if abs(delta) < 0.15:
+            self._value = self._target_value
+            self._anim_timer.stop()
+        else:
+            # Exponential easing gives a smooth, quick settle without overshoot.
+            self._value += delta * 0.22
         self.update()
 
     def paintEvent(self, _):
@@ -618,8 +637,8 @@ class MetricBar(QWidget):
         W, H = self.width(), self.height()
 
         p.setBrush(QBrush(qcol(C.PANEL2)))
-        p.setPen(QPen(qcol(C.BORDER_A), 1))
-        p.drawRoundedRect(QRectF(1, 1, W - 2, H - 2), 4, 4)
+        p.setPen(QPen(qcol(C.BORDER), 1))
+        p.drawRoundedRect(QRectF(1, 1, W - 2, H - 2), 6, 6)
 
         bar_h   = 4
         bar_y   = H - bar_h - 5
