@@ -28,7 +28,7 @@ from PyQt6.QtGui import (
     QPen, QPixmap, QRadialGradient, QShortcut,
 )
 from PyQt6.QtWidgets import (
-    QApplication, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+    QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
     QMainWindow, QPushButton, QScrollArea, QSizePolicy, QSplitter,
     QStackedWidget, QTextEdit, QVBoxLayout, QWidget, QProgressBar,
 )
@@ -51,36 +51,36 @@ def _read_full_config() -> dict:
         return {}
 
 
-_DEFAULT_W, _DEFAULT_H = 1440, 900
-_MIN_W,     _MIN_H     = 1100, 700
-_LEFT_W  = 190
-_RIGHT_W = 420
+_DEFAULT_W, _DEFAULT_H = 980, 700
+_MIN_W,     _MIN_H     = 820, 580
+_LEFT_W  = 148
+_RIGHT_W = 340
 
 _OS = platform.system()  # "Windows" | "Darwin" | "Linux"
 
 
 class C:
-    BG        = "#041522"
-    PANEL     = "#061b2a"
-    PANEL2    = "#082131"
-    BORDER    = "#10394d"
-    BORDER_B  = "#16718b"
-    BORDER_A  = "#14536b"
-    PRI       = "#11d9f5"
-    PRI_DIM   = "#0786a5"
-    PRI_GHO   = "#0a2b3d"
+    BG        = "#00060a"
+    PANEL     = "#010d14"
+    PANEL2    = "#010f18"
+    BORDER    = "#0d3347"
+    BORDER_B  = "#1a5c7a"
+    BORDER_A  = "#0f4060"
+    PRI       = "#00d4ff"
+    PRI_DIM   = "#007a99"
+    PRI_GHO   = "#001f2e"
     ACC       = "#ff6b00"
     ACC2      = "#ffcc00"
     GREEN     = "#00ff88"
     GREEN_D   = "#00aa55"
     RED       = "#ff3355"
     MUTED_C   = "#ff3366"
-    TEXT      = "#a8efff"
-    TEXT_DIM  = "#4e91a8"
-    TEXT_MED  = "#78bfd0"
-    WHITE     = "#e2faff"
-    DARK      = "#031522"
-    BAR_BG    = "#0b2b3a"
+    TEXT      = "#8ffcff"
+    TEXT_DIM  = "#3a8a9a"
+    TEXT_MED  = "#5ab8cc"
+    WHITE     = "#d8f8ff"
+    DARK      = "#000d14"
+    BAR_BG    = "#011520"
 
 
 # Ana renge (accent) bağlı anahtarlar — durum renkleri (ACC, GREEN, RED…) sabit kalır
@@ -602,33 +602,14 @@ class MetricBar(QWidget):
         super().__init__(parent)
         self._label = label
         self._color = color
-        self._value = 0.0       # smoothly rendered value (0–100)
-        self._target_value = 0.0
+        self._value = 0.0       # 0–100
         self._text  = "--"
-        self.setFixedHeight(58)
-        self.setMinimumWidth(100)
-
-        # Ease metric changes instead of snapping the bars every refresh.
-        self._anim_timer = QTimer(self)
-        self._anim_timer.setInterval(16)
-        self._anim_timer.timeout.connect(self._animate_value)
+        self.setFixedHeight(38)
+        self.setMinimumWidth(80)
 
     def set_value(self, pct: float, text: str):
-        self._target_value = max(0.0, min(100.0, pct))
-        self._text = text
-        if not self._anim_timer.isActive() and abs(self._target_value - self._value) > 0.15:
-            self._anim_timer.start()
-        else:
-            self.update()
-
-    def _animate_value(self):
-        delta = self._target_value - self._value
-        if abs(delta) < 0.15:
-            self._value = self._target_value
-            self._anim_timer.stop()
-        else:
-            # Exponential easing gives a smooth, quick settle without overshoot.
-            self._value += delta * 0.22
+        self._value = max(0.0, min(100.0, pct))
+        self._text  = text
         self.update()
 
     def paintEvent(self, _):
@@ -637,8 +618,8 @@ class MetricBar(QWidget):
         W, H = self.width(), self.height()
 
         p.setBrush(QBrush(qcol(C.PANEL2)))
-        p.setPen(QPen(qcol(C.BORDER), 1))
-        p.drawRoundedRect(QRectF(1, 1, W - 2, H - 2), 6, 6)
+        p.setPen(QPen(qcol(C.BORDER_A), 1))
+        p.drawRoundedRect(QRectF(1, 1, W - 2, H - 2), 4, 4)
 
         bar_h   = 4
         bar_y   = H - bar_h - 5
@@ -1881,60 +1862,6 @@ class MainWindow(QMainWindow):
             apply_ui_accent(_ui_color)
 
         self.setWindowTitle(f"{_display} — MARK LI")
-
-        # Global HUD polish: subtle focus states, refined scrollbars and tooltips.
-        # Existing widget-specific styles and HUD animations remain unchanged.
-        self.setStyleSheet(self.styleSheet() + """
-            QToolTip {
-                background: #061722;
-                color: #d8f8ff;
-                border: 1px solid #0d7899;
-                padding: 6px 9px;
-                border-radius: 5px;
-            }
-            QScrollBar:vertical {
-                background: #010d14;
-                width: 9px;
-                margin: 2px 1px;
-                border: none;
-            }
-            QScrollBar::handle:vertical {
-                background: #12465b;
-                min-height: 28px;
-                border-radius: 4px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: #00a8cf;
-            }
-            QScrollBar::add-line:vertical,
-            QScrollBar::sub-line:vertical {
-                height: 0px;
-                background: transparent;
-            }
-            QScrollBar::add-page:vertical,
-            QScrollBar::sub-page:vertical {
-                background: transparent;
-            }
-            QScrollBar:horizontal {
-                background: #010d14;
-                height: 9px;
-                margin: 1px 2px;
-                border: none;
-            }
-            QScrollBar::handle:horizontal {
-                background: #12465b;
-                min-width: 28px;
-                border-radius: 4px;
-            }
-            QScrollBar::handle:horizontal:hover {
-                background: #00a8cf;
-            }
-            QScrollBar::add-line:horizontal,
-            QScrollBar::sub-line:horizontal {
-                width: 0px;
-                background: transparent;
-            }
-        """)
         self.setMinimumSize(_MIN_W, _MIN_H)
         self.resize(_DEFAULT_W, _DEFAULT_H)
 
@@ -1954,29 +1881,7 @@ class MainWindow(QMainWindow):
         self._customize_overlay: CustomizeOverlay | None = None
 
         central = QWidget()
-        central.setStyleSheet(f"""
-            QWidget {{ color: {C.TEXT}; }}
-            QToolTip {{
-                background: {C.PANEL2}; color: {C.WHITE};
-                border: 1px solid {C.BORDER_B}; padding: 6px 9px;
-            }}
-            QScrollBar:vertical {{
-                background: {C.BG}; width: 9px; margin: 2px; border: none;
-            }}
-            QScrollBar::handle:vertical {{
-                background: {C.BORDER_B}; min-height: 28px; border-radius: 4px;
-            }}
-            QScrollBar::handle:vertical:hover {{ background: {C.PRI}; }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }}
-            QScrollBar:horizontal {{
-                background: {C.BG}; height: 9px; margin: 2px; border: none;
-            }}
-            QScrollBar::handle:horizontal {{
-                background: {C.BORDER_B}; min-width: 28px; border-radius: 4px;
-            }}
-            QScrollBar::handle:horizontal:hover {{ background: {C.PRI}; }}
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0px; }}
-        """)
+        central.setStyleSheet(f"background: {C.BG};")
         self.setCentralWidget(central)
 
         root = QVBoxLayout(central)
@@ -2623,7 +2528,7 @@ class MainWindow(QMainWindow):
 
     def _build_header(self) -> QWidget:
         w = QWidget()
-        w.setFixedHeight(68)
+        w.setFixedHeight(54)
         w.setStyleSheet(f"background: {C.DARK}; border-bottom: 1px solid {C.BORDER_B};")
         lay = QHBoxLayout(w)
         lay.setContentsMargins(16, 0, 16, 0)
@@ -2658,7 +2563,7 @@ class MainWindow(QMainWindow):
         _disp = self._assistant_name.upper()
         self._title_lbl = QLabel(_disp)
         self._title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._title_lbl.setFont(QFont("Courier New", 22, QFont.Weight.Bold))
+        self._title_lbl.setFont(QFont("Courier New", 17, QFont.Weight.Bold))
         self._title_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent;")
         mid.addWidget(self._title_lbl)
         _sub_text = ("Just A Rather Very Intelligent System"
@@ -2666,7 +2571,7 @@ class MainWindow(QMainWindow):
                      else "Personal AI Assistant")
         self._sub_lbl = QLabel(_sub_text)
         self._sub_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._sub_lbl.setFont(QFont("Courier New", 8))
+        self._sub_lbl.setFont(QFont("Courier New", 7))
         self._sub_lbl.setStyleSheet(f"color: {C.PRI_DIM}; background: transparent;")
         mid.addWidget(self._sub_lbl)
         lay.addLayout(mid)
@@ -2695,8 +2600,8 @@ class MainWindow(QMainWindow):
         w.setFixedWidth(_LEFT_W)
         w.setStyleSheet(f"background: {C.DARK}; border-right: 1px solid {C.BORDER};")
         lay = QVBoxLayout(w)
-        lay.setContentsMargins(10, 12, 10, 12)
-        lay.setSpacing(8)
+        lay.setContentsMargins(8, 10, 8, 10)
+        lay.setSpacing(6)
 
         hdr = QLabel("◈ SYS MONITOR")
         hdr.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
@@ -2766,112 +2671,69 @@ class MainWindow(QMainWindow):
         w.setFixedWidth(_RIGHT_W)
         w.setStyleSheet(f"background: {C.DARK}; border-left: 1px solid {C.BORDER};")
         lay = QVBoxLayout(w)
-        lay.setContentsMargins(12, 12, 12, 12)
-        lay.setSpacing(9)
+        lay.setContentsMargins(8, 8, 8, 8)
+        lay.setSpacing(6)
 
         def _sec(txt):
-            l = QLabel(f"▸  {txt}")
-            l.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
-            l.setStyleSheet(
-                f"color: {C.PRI}; background: transparent; "
-                f"padding: 2px 0 4px 2px; letter-spacing: 1px;"
-            )
+            l = QLabel(f"▸ {txt}")
+            l.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+            l.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
             return l
-
-        def _rule():
-            line = QFrame()
-            line.setFrameShape(QFrame.Shape.HLine)
-            line.setStyleSheet(f"color: {C.BORDER}; background: {C.BORDER}; max-height: 1px;")
-            return line
 
         lay.addWidget(_sec("ACTIVITY LOG"))
         self._log = LogWidget()
-        self._log.setMinimumHeight(150)
         lay.addWidget(self._log, stretch=1)
 
-        lay.addWidget(_sec("QUICK ACTIONS"))
-        quick_grid = QGridLayout()
-        quick_grid.setContentsMargins(0, 0, 0, 0)
-        quick_grid.setHorizontalSpacing(8)
-        quick_grid.setVerticalSpacing(7)
-        quick_actions = [
-            ("↗  Open WhatsApp", "Open WhatsApp"),
-            ("⌁  Drone link", "Open drone link"),
-            ("▤  Summarize file", "Summarize the uploaded file"),
-            ("⌕  Web search", "Search the web for "),
-        ]
-        for i, (label, command) in enumerate(quick_actions):
-            btn = QPushButton(label)
-            btn.setMinimumHeight(38)
-            btn.setFont(QFont("Courier New", 8))
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    color: {C.WHITE}; background: {C.PANEL};
-                    border: 1px solid {C.BORDER_B}; border-radius: 7px;
-                    padding: 5px 8px; text-align: left;
-                }}
-                QPushButton:hover {{
-                    color: {C.PRI}; background: {C.PRI_GHO};
-                    border: 1px solid {C.PRI};
-                }}
-                QPushButton:pressed {{ background: {C.BORDER}; }}
-            """)
-            btn.clicked.connect(lambda checked=False, cmd=command: self._run_quick_action(cmd))
-            quick_grid.addWidget(btn, i // 2, i % 2)
-        lay.addLayout(quick_grid)
+        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
+        lay.addWidget(sep)
 
-        lay.addWidget(_rule())
         lay.addWidget(_sec("FILE UPLOAD"))
         self._drop_zone = FileDropZone()
         self._drop_zone.file_selected.connect(self._on_file_selected)
         lay.addWidget(self._drop_zone)
 
         self._file_hint = QLabel("No file loaded — drop or click above to upload")
-        self._file_hint.setFont(QFont("Courier New", 8))
-        self._file_hint.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent; padding: 2px;")
+        self._file_hint.setFont(QFont("Courier New", 7))
+        self._file_hint.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
         self._file_hint.setWordWrap(True)
         lay.addWidget(self._file_hint)
 
-        lay.addWidget(_rule())
+        sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.HLine)
+        sep2.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
+        lay.addWidget(sep2)
+
         lay.addWidget(_sec("COMMAND INPUT"))
         lay.addLayout(self._build_input_row())
 
-        self._interrupt_btn = QPushButton("■  INTERRUPT  [ESC]")
-        self._interrupt_btn.setFixedHeight(44)
-        self._interrupt_btn.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+        self._interrupt_btn = QPushButton("✋  INTERRUPT  [ESC]")
+        self._interrupt_btn.setFixedHeight(34)
+        self._interrupt_btn.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
         self._interrupt_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._interrupt_btn.setStyleSheet(f"""
             QPushButton {{
-                background: #24111f; color: {C.MUTED_C};
-                border: 1px solid {C.MUTED_C}; border-radius: 7px;
-                letter-spacing: 1px;
+                background: #140008; color: {C.MUTED_C};
+                border: 1px solid {C.MUTED_C}; border-radius: 3px;
             }}
-            QPushButton:hover {{ background: #351326; border: 1px solid #ff6688; }}
-            QPushButton:pressed {{ background: #48162c; }}
+            QPushButton:hover {{
+                background: #200010; border: 1px solid #ff6688;
+            }}
+            QPushButton:pressed {{
+                background: #300018;
+            }}
         """)
         self._interrupt_btn.clicked.connect(self._do_interrupt)
         lay.addWidget(self._interrupt_btn)
 
-        self._mute_btn = QPushButton("●  MICROPHONE ACTIVE")
-        self._mute_btn.setFixedHeight(42)
-        self._mute_btn.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+        self._mute_btn = QPushButton("🎙  MICROPHONE ACTIVE")
+        self._mute_btn.setFixedHeight(30)
+        self._mute_btn.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
         self._mute_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._mute_btn.clicked.connect(self._toggle_mute)
         self._style_mute_btn()
         lay.addWidget(self._mute_btn)
 
         return w
-
-    def _run_quick_action(self, command: str) -> None:
-        """Send a quick-action prompt through the existing assistant command path."""
-        if command.endswith(" "):
-            self._input.setText(command)
-            self._input.setFocus()
-            self._input.setCursorPosition(len(command))
-            return
-        self._input.setText(command)
-        self._send()
 
     def _build_quick_drawer(self) -> QWidget:
         """Floating overlay panel shown when the ⚙ header button is toggled."""
@@ -2992,7 +2854,7 @@ class MainWindow(QMainWindow):
         self._input = QLineEdit()
         self._input.setPlaceholderText("Type a command or question…")
         self._input.setFont(QFont("Courier New", 9))
-        self._input.setFixedHeight(40)
+        self._input.setFixedHeight(30)
         self._input.setStyleSheet(f"""
             QLineEdit {{
                 background: #000d14; color: {C.WHITE};
@@ -3004,7 +2866,7 @@ class MainWindow(QMainWindow):
         row.addWidget(self._input)
 
         send = QPushButton("▸")
-        send.setFixedSize(42, 40)
+        send.setFixedSize(30, 30)
         send.setFont(QFont("Courier New", 11, QFont.Weight.Bold))
         send.setCursor(Qt.CursorShape.PointingHandCursor)
         send.setStyleSheet(f"""
@@ -3125,7 +2987,7 @@ class MainWindow(QMainWindow):
 
     def _build_footer(self) -> QWidget:
         w = QWidget()
-        w.setFixedHeight(26)
+        w.setFixedHeight(22)
         w.setStyleSheet(f"background: {C.DARK}; border-top: 1px solid {C.BORDER};")
         lay = QHBoxLayout(w); lay.setContentsMargins(14, 0, 14, 0)
 
