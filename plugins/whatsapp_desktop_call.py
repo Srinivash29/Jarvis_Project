@@ -339,92 +339,113 @@ class WhatsAppDesktopController:
 
         return None
     def check_call_buttons(self):
-        try:
-            voice_btn = self._find_call_control("voice")
-            if voice_btn is not None:
-                voice_btn.Click()
-                self.log("Voice call button located in active chat via robust UIA scan.")
-                self.log(f"Initiating WhatsApp voice call to {name}.")
-                return self._verify_call_state()
-        except Exception as e:
-            self.log(f"Layer 1 UIA voice call click failed: {e}")
+        """Diagnose whether WhatsApp exposes voice/video call controls in the active chat."""
+        if not self.window:
+            return False
 
-        # Layer 2: Spatial Fallback
-        self.log("UIA blind; using spatial fallback on active chat header.")
+        voice_btn = self._find_call_control("voice")
+        video_btn = self._find_call_control("video")
+
+        if voice_btn is not None or video_btn is not None:
+            self.log("Call buttons detected in the active chat.")
+            return True
+
+        self.log("Call buttons not detected through UI Automation.")
+        return False
+
+    def _click_call_button(self, kind):
+        """Click the requested call button using UIA first, then a geometry fallback."""
+        button = self._find_call_control(kind)
+        if button is not None:
+            try:
+                button.Click(waitTime=0.2)
+                self.log(f"{kind.capitalize()} call button clicked via UI Automation.")
+                return True
+            except Exception as e:
+                self.log(f"UIA {kind} call button click failed: {e}")
+
+        # Last-resort geometry fallback. This is only used after the UIA search
+        # cannot find a callable button.
         try:
             import pyautogui
+
             rect = self.window.BoundingRectangle
             width = rect.right - rect.left
             height = rect.bottom - rect.top
-            
-            self.log(f"WhatsApp window rectangle: x={rect.left}, y={rect.top}, width={width}, height={height}")
-            
-            # Prevent blind clicks if window geometry is nonsensical
+
             if width < 500 or height < 400:
-                self.log("Window too small to safely calculate spatial call buttons.")
+                self.log("WhatsApp window is too small for safe call-button positioning.")
                 return False
-                
-            click_x = rect.left + width - VOICE_CALL_X_OFFSET
+
+            if kind == "voice":
+                x_offset = VOICE_CALL_X_OFFSET
+            else:
+                x_offset = VIDEO_CALL_X_OFFSET
+
+            # Current WhatsApp desktop places the call controls near the
+            # upper-right area of the active-chat header.
+            click_x = rect.right - x_offset
             click_y = rect.top + CALL_BUTTON_Y_OFFSET
-            
-            self.log(f"Targeting voice call button at Spatial geometry (x={click_x}, y={click_y}).")
-            
+
             self.window.SetActive()
-            time.sleep(0.2)
+            time.sleep(0.3)
             pyautogui.click(click_x, click_y)
-            self.log("Voice call button click executed from active chat.")
-            self.log(f"Initiating WhatsApp voice call to {name}.")
-            return self._verify_call_state()
+            self.log(
+                f"{kind.capitalize()} call button clicked using spatial fallback "
+                f"at ({click_x}, {click_y})."
+            )
+            return True
         except Exception as e:
-            self.log(f"Layer 2 Spatial voice call click failed: {e}")
-            
+            self.log(f"Spatial {kind} call-button click failed: {e}")
+            return False
+
+    def _verify_call_state(self, wait_seconds=3.0):
+        """Wait briefly and verify that WhatsApp entered an outgoing/in-call UI."""
+        self.log(f"Waiting {wait_seconds:.1f}s for WhatsApp call UI...")
+        deadline = time.time() + wait_seconds
+
+        while time.time() < deadline:
+            state = self.get_call_state()
+            if state == "CONNECTED":
+                self.log("Call UI detected: WhatsApp is in an active/outgoing call state.")
+                return "SUCCESS_VERIFIED"
+            time.sleep(0.5)
+
+        self.log("Call click completed, but no active/outgoing call UI was detected.")
+        return "SUCCESS_UNVERIFIED"
+
+    def start_voice_call(self, name):
+        if not self.window:
+            return False
+
+        if not self._ensure_active_chat(name):
+            self.log(f"Cannot start voice call: active chat is not confirmed for {name}.")
+            return False
+
+        self.log(f"Starting WhatsApp voice call to {name}.")
+        time.sleep(1.0)
+
+        if self._click_call_button("voice"):
+            return self._verify_call_state()
+
+        self.log(f"Voice call could not be started for {name}.")
         return False
 
     def start_video_call(self, name):
-        if not self.window: return False
-        self.log(f"Attempting to start video call for {name}...")
-        
-        # Delay to allow chat header to render fully
-        time.sleep(0.5)
+        if not self.window:
+            return False
 
-        # Layer 1: UIA Click
-        try:
-            video_btn = self._find_call_control("video")
-            if video_btn is not None:
-                video_btn.Click()
-                self.log("Video call button located via robust UIA scan. Click executed.")
-                self.log(f"Initiating WhatsApp video call to {name}.")
-                return self._verify_call_state()
-        except Exception as e:
-            self.log(f"Layer 1 UIA video call click failed: {e}")
+        if not self._ensure_active_chat(name):
+            self.log(f"Cannot start video call: active chat is not confirmed for {name}.")
+            return False
 
-        # Layer 2: Spatial Fallback
-        try:
-            import pyautogui
-            rect = self.window.BoundingRectangle
-            width = rect.right - rect.left
-            height = rect.bottom - rect.top
-            
-            self.log(f"WhatsApp window rectangle: x={rect.left}, y={rect.top}, width={width}, height={height}")
-            
-            if width < 500 or height < 400:
-                self.log("Window too small to safely calculate spatial call buttons.")
-                return False
-                
-            click_x = rect.left + width - VIDEO_CALL_X_OFFSET
-            click_y = rect.top + CALL_BUTTON_Y_OFFSET
-            
-            self.log(f"Targeting video call button at Spatial geometry (x={click_x}, y={click_y}).")
-            
-            self.window.SetActive()
-            time.sleep(0.2)
-            pyautogui.click(click_x, click_y)
-            self.log(f"Video call button click executed.")
-            self.log(f"Initiating WhatsApp video call to {name}.")
+        self.log(f"Starting WhatsApp video call to {name}.")
+        time.sleep(1.0)
+
+        if self._click_call_button("video"):
             return self._verify_call_state()
-        except Exception as e:
-            self.log(f"Layer 2 Spatial video call click failed: {e}")
-            
+
+        self.log(f"Video call could not be started for {name}.")
         return False
 
     def end_call(self):
