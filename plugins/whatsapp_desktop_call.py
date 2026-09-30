@@ -2,6 +2,9 @@ import uiautomation as auto
 import time
 import re
 import psutil
+import platform
+import ctypes
+from ctypes import wintypes
 
 # --- CONFIGURABLE OFFSETS FOR CALL BUTTONS ---
 # Based on WhatsApp Desktop window geometry:
@@ -19,29 +22,104 @@ class WhatsAppDesktopController:
     def log(self, msg):
         self.diagnostic_log.append(msg)
 
-    def find_or_focus_whatsapp(self):
-        self.window = None
-        root = auto.GetRootControl()
-        for win in root.GetChildren():
-            try:
-                name = win.Name
-                pid = win.ProcessId
-                proc_name = psutil.Process(pid).name()
-                if "WhatsApp" in proc_name or "WhatsApp" in name:
-                    self.window = win
-                    break
-            except:
-                continue
 
-        if self.window and self.window.Exists(0, 0):
+    @staticmethod
+    def _whatsapp_process_pids():
+        """Return PIDs for all known/current WhatsApp Windows processes."""
+        names = {"whatsapp.exe", "whatsapp.root.exe", "whatsappservice.exe"}
+        pids = set()
+        try:
+            for proc in psutil.process_iter(["pid", "name"]):
+                try:
+                    name = (proc.info.get("name") or "").lower()
+                    if name in names or ("whatsapp" in name and name.endswith(".exe")):
+                        pids.add(proc.info["pid"])
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+        except Exception:
+            pass
+        return pids
+
+    def _find_whatsapp_window_win32(self, pids):
+        """Find a real top-level WhatsApp window, including Store-app windows."""
+        if platform.system() != "Windows" or not pids:
+            return None
+        user32 = ctypes.windll.user32
+        found = []
+        EnumWindowsProc = ctypes.WINFUNCTYPE(
+            wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+        )
+        def callback(hwnd, _lparam):
             try:
-                self.window.SetActive()
-                time.sleep(0.3)
+                if not user32.IsWindowVisible(hwnd):
+                    return True
+                pid = wintypes.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                if pid.value in pids:
+                    found.append(hwnd)
+                    return False
             except Exception:
                 pass
-            self.log("WhatsApp detected and focused.")
             return True
-        self.log("WhatsApp NOT detected.")
+        try:
+            user32.EnumWindows(EnumWindowsProc(callback), 0)
+        except Exception as e:
+            self.log(f"Win32 window enumeration failed: {e}")
+            return None
+        if not found:
+            return None
+        try:
+            return auto.ControlFromHandle(found[0])
+        except Exception as e:
+            self.log(f"Could not attach UIA to WhatsApp window: {e}")
+            return None
+
+    def find_or_focus_whatsapp(self):
+        """Detect WhatsApp reliably, including Microsoft Store/WebView2 windows."""
+        self.window = None
+        pids = self._whatsapp_process_pids()
+
+        # Primary path: enumerate real Windows top-level windows by PID.
+        self.window = self._find_whatsapp_window_win32(pids)
+
+        # Fallback: UI Automation top-level scan.
+        if self.window is None:
+            try:
+                root = auto.GetRootControl()
+                for win in root.GetChildren():
+                    try:
+                        pid = win.ProcessId
+                        name = win.Name or ""
+                        proc_name = psutil.Process(pid).name()
+                        if (
+                            pid in pids
+                            or "whatsapp" in proc_name.lower()
+                            or "whatsapp" in name.lower()
+                        ):
+                            self.window = win
+                            break
+                    except Exception:
+                        continue
+            except Exception as e:
+                self.log(f"UIA root scan failed: {e}")
+
+        if self.window is not None:
+            try:
+                if self.window.Exists(0, 0):
+                    self.window.SetActive()
+                    time.sleep(0.5)
+                    self.log("WhatsApp window detected and focused.")
+                    return True
+            except Exception as e:
+                self.log(f"WhatsApp window found but could not be focused: {e}")
+
+        if pids:
+            self.log(
+                f"WhatsApp process detected (PID(s): {sorted(pids)}), "
+                "but no usable top-level window was found."
+            )
+        else:
+            self.log("WhatsApp process is not running.")
         return False
 
     def is_whatsapp_running(self):
