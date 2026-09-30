@@ -2,6 +2,8 @@ import time
 import subprocess
 import platform
 import shutil
+import ctypes
+from ctypes import wintypes
 
 try:
     import psutil
@@ -93,46 +95,126 @@ def _is_windows_process_running(process_names: tuple[str, ...]) -> bool:
     return False
 
 
-def _launch_whatsapp_windows() -> bool:
-    """Launch modern Microsoft Store WhatsApp on Windows."""
-    if _is_windows_process_running(("WhatsApp.Root.exe", "WhatsApp.exe")):
-        return True
+def _whatsapp_process_pids() -> set[int]:
+    """Return PIDs for current WhatsApp Windows processes, including Store/WebView2 variants."""
+    if not _PSUTIL:
+        return set()
+
+    pids: set[int] = set()
+    try:
+        for proc in psutil.process_iter(["pid", "name", "exe"]):
+            try:
+                name = (proc.info.get("name") or "").lower()
+                exe = (proc.info.get("exe") or "").lower()
+                if "whatsapp" in name or "whatsapp" in exe:
+                    pids.add(int(proc.info["pid"]))
+            except (psutil.NoSuchProcess, psutil.AccessDenied, ValueError, TypeError):
+                continue
+    except Exception:
+        pass
+    return pids
+
+
+def _is_whatsapp_window_visible() -> bool:
+    """Verify that WhatsApp has a visible top-level Windows window."""
+    if _SYSTEM != "Windows":
+        return False
 
     try:
-        ps = ("$app = Get-StartApps | "
-              "Where-Object { $_.Name -like '*WhatsApp*' } | "
-              "Select-Object -First 1; "
-              "if ($app) { $app.AppID }")
+        user32 = ctypes.windll.user32
+        detected = {"found": False}
+        pids = _whatsapp_process_pids()
+
+        @ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+        def enum_callback(hwnd, _lparam):
+            if detected["found"]:
+                return True
+
+            if not user32.IsWindowVisible(hwnd):
+                return True
+
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if int(pid.value) not in pids:
+                return True
+
+            length = user32.GetWindowTextLengthW(hwnd)
+            title = ctypes.create_unicode_buffer(max(length + 1, 2))
+            user32.GetWindowTextW(hwnd, title, len(title))
+
+            # A visible top-level window belonging to a WhatsApp process is
+            # stronger evidence than merely seeing a background process.
+            if title.value.strip() or "WhatsApp" in (title.value or ""):
+                detected["found"] = True
+                return False
+
+            return True
+
+        user32.EnumWindows(enum_callback, 0)
+        return detected["found"]
+    except Exception as e:
+        print(f"[open_app] WhatsApp window verification failed: {e}")
+        return False
+
+
+def _wait_for_whatsapp_window(timeout_seconds: float = 15.0) -> bool:
+    """Wait until WhatsApp presents a usable visible window."""
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if _is_whatsapp_window_visible():
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def _launch_whatsapp_windows() -> bool:
+    """Launch modern Microsoft Store WhatsApp and verify a visible window."""
+    if _is_whatsapp_window_visible():
+        return True
+
+    # Prefer the AppUserModelID registered in the Start menu. This handles
+    # current Microsoft Store WhatsApp installations without hardcoding an ID.
+    try:
+        ps = (
+            "$apps = Get-StartApps | "
+            "Where-Object { $_.Name -match '(?i)WhatsApp' }; "
+            "if ($apps) { ($apps | Select-Object -First 1).AppID }"
+        )
         result = subprocess.run(
             ["powershell.exe", "-NoProfile", "-Command", ps],
-            capture_output=True, text=True, timeout=8
+            capture_output=True,
+            text=True,
+            timeout=8,
         )
-        lines = (result.stdout or "").strip().splitlines()
-        app_id = lines[-1].strip() if lines else ""
+        lines = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
+        app_id = lines[-1] if lines else ""
+
         if app_id:
             subprocess.Popen(
-                ["explorer.exe", "shell:AppsFolder\\" + app_id],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                ["explorer.exe", "shell:AppsFolder\\\\"
+                 + app_id],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
-            for _ in range(12):
-                time.sleep(0.5)
-                if _is_windows_process_running(("WhatsApp.Root.exe", "WhatsApp.exe")):
-                    return True
+            if _wait_for_whatsapp_window(15):
+                return True
     except Exception as e:
         print(f"[open_app] WhatsApp AppsFolder launch failed: {e}")
 
+    # Fallback for installations that are registered in Start but don't expose
+    # a usable AppUserModelID through the first lookup.
     try:
         import pyautogui
+
         pyautogui.PAUSE = 0.1
         pyautogui.press("win")
-        time.sleep(0.7)
+        time.sleep(0.8)
         pyautogui.write("WhatsApp", interval=0.05)
         time.sleep(1.0)
         pyautogui.press("enter")
-        for _ in range(12):
-            time.sleep(0.5)
-            if _is_windows_process_running(("WhatsApp.Root.exe", "WhatsApp.exe")):
-                return True
+
+        if _wait_for_whatsapp_window(15):
+            return True
     except Exception as e:
         print(f"[open_app] WhatsApp Start-menu launch failed: {e}")
 
