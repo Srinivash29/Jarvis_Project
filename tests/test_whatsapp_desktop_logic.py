@@ -63,7 +63,7 @@ class TestWhatsAppLogic(unittest.TestCase):
         
         # It should assume success because it cannot verify otherwise
         self.assertTrue(self.controller.open_contact("My World", []))
-        self.assertIn("Chat opened successfully.", "".join(self.controller.diagnostic_log))
+        self.assertIn("Chat open assumed after successful blind WebView2 navigation.", "".join(self.controller.diagnostic_log))
 
     @patch('pyautogui.click')
     @patch('time.sleep')
@@ -75,7 +75,7 @@ class TestWhatsAppLogic(unittest.TestCase):
         result = self.controller.start_voice_call("My World")
         
         self.assertEqual(result, "SUCCESS_VERIFIED")
-        self.assertIn("Voice call button located in active chat via UIA.", "".join(self.controller.diagnostic_log))
+        self.assertIn("Voice call button clicked via UI Automation.", "".join(self.controller.diagnostic_log))
         mock_click.assert_not_called()
 
     @patch('pyautogui.click')
@@ -99,7 +99,7 @@ class TestWhatsAppLogic(unittest.TestCase):
         result = self.controller.start_voice_call("My World")
         
         self.assertEqual(result, "SUCCESS_UNVERIFIED")
-        self.assertIn("Targeting voice call button at Spatial geometry", "".join(self.controller.diagnostic_log))
+        self.assertIn("Voice call button clicked using spatial fallback", "".join(self.controller.diagnostic_log))
         mock_click.assert_called_once()
         
     @patch('pyautogui.click')
