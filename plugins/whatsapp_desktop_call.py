@@ -303,62 +303,47 @@ class WhatsAppDesktopController:
             
         return opened
 
+    def _find_call_control(self, kind):
+        """Find a WhatsApp call button even when WebView2 UIA names/search depth change."""
+        if not self.window:
+            return None
+
+        if kind == "voice":
+            candidates = ["Voice call", "Start voice call", "Audio call", "Start audio call", "Call"]
+            terms = ("voice call", "start voice", "audio call")
+        else:
+            candidates = ["Video call", "Start video call", "Video"]
+            terms = ("video call", "start video")
+
+        for name in candidates:
+            try:
+                btn = self.window.ButtonControl(searchDepth=20, Name=name)
+                if btn.Exists(0.2, 1):
+                    return btn
+            except Exception:
+                continue
+
+        try:
+            for control, _depth in auto.WalkControl(self.window, maxDepth=20):
+                try:
+                    name = " ".join((control.Name or "").lower().split())
+                    control_type = str(getattr(control, "ControlTypeName", "") or "").lower()
+                    if not name or ("button" not in control_type and not hasattr(control, "Click")):
+                        continue
+                    if any(term in name for term in terms):
+                        return control
+                except Exception:
+                    continue
+        except Exception as e:
+            self.log(f"Generic call-button scan failed: {e}")
+
+        return None
     def check_call_buttons(self):
         try:
-            voice_btn = self.window.ButtonControl(searchDepth=12, Name="Voice call")
-            if not voice_btn.Exists(0.1, 1):
-                voice_btn = self.window.ButtonControl(searchDepth=12, Name="Call")
-                
-            video_btn = self.window.ButtonControl(searchDepth=12, Name="Video call")
-            
-            v_exists = voice_btn.Exists(0.1, 1)
-            vid_exists = video_btn.Exists(0.1, 1)
-            
-            if v_exists or vid_exists:
-                self.log("Call buttons DETECTED via UIA in chat header.")
-            else:
-                self.log("Call buttons NOT DETECTED (UIA is blind or not in chat).")
-        except:
-            self.log("Call buttons NOT DETECTED (Exception during UIA check).")
-
-    def _verify_call_state(self):
-        self.log("Waiting 1.5s for call state UI change...")
-        time.sleep(1.5)
-        state = self.get_call_state()
-        if state == "CONNECTED":
-            self.log("Post-click verification: Call state verified as CONNECTED/OUTGOING.")
-            return "SUCCESS_VERIFIED"
-        else:
-            self.log(f"Post-click verification: Call state could not be independently verified (State: {state}).")
-            return "SUCCESS_UNVERIFIED"
-
-    def _ensure_active_chat(self, name):
-        normalized = name.lower().replace(" ", "")
-        if getattr(self, 'active_contact', None) != normalized:
-            self.log(f"Fail safe: Target chat '{name}' is not currently established as active.")
-            return False
-        return True
-
-    def start_voice_call(self, name):
-        if not self.window: return False
-        
-        if not self._ensure_active_chat(name):
-            return False
-            
-        self.log(f"Starting voice call from active chat: {name}")
-        
-        # Delay to allow chat header to render fully
-        time.sleep(1.0)
-
-        # Layer 1: UIA Click
-        try:
-            voice_btn = self.window.ButtonControl(searchDepth=12, Name="Voice call")
-            if not voice_btn.Exists(0.1, 1):
-                voice_btn = self.window.ButtonControl(searchDepth=12, Name="Call")
-            
-            if voice_btn.Exists(0.1, 1):
+            voice_btn = self._find_call_control("voice")
+            if voice_btn is not None:
                 voice_btn.Click()
-                self.log("Voice call button located in active chat via UIA.")
+                self.log("Voice call button located in active chat via robust UIA scan.")
                 self.log(f"Initiating WhatsApp voice call to {name}.")
                 return self._verify_call_state()
         except Exception as e:
@@ -404,10 +389,10 @@ class WhatsAppDesktopController:
 
         # Layer 1: UIA Click
         try:
-            video_btn = self.window.ButtonControl(searchDepth=12, Name="Video call")
-            if video_btn.Exists(0.1, 1):
+            video_btn = self._find_call_control("video")
+            if video_btn is not None:
                 video_btn.Click()
-                self.log("Video call button located via UIA. Click executed.")
+                self.log("Video call button located via robust UIA scan. Click executed.")
                 self.log(f"Initiating WhatsApp video call to {name}.")
                 return self._verify_call_state()
         except Exception as e:
@@ -467,11 +452,36 @@ class WhatsAppDesktopController:
         return False
 
     def get_call_state(self):
-        if not self.window: return "UNKNOWN"
-        if self.window.ButtonControl(searchDepth=12, Name="End call").Exists(0.5, 1):
-            return "CONNECTED"
-        if self.window.ButtonControl(searchDepth=12, Name="Accept").Exists(0.5, 1):
-            return "INCOMING_CALL"
+        if not self.window:
+            return "UNKNOWN"
+
+        try:
+            end_btn = self.window.ButtonControl(searchDepth=20, Name="End call")
+            if end_btn.Exists(0.5, 1):
+                return "CONNECTED"
+        except Exception:
+            pass
+
+        try:
+            accept_btn = self.window.ButtonControl(searchDepth=20, Name="Accept")
+            if accept_btn.Exists(0.5, 1):
+                return "INCOMING_CALL"
+        except Exception:
+            pass
+
+        try:
+            for control, _depth in auto.WalkControl(self.window, maxDepth=20):
+                try:
+                    name = " ".join((control.Name or "").lower().split())
+                    if "end call" in name or "hang up" in name:
+                        return "CONNECTED"
+                    if name in {"accept", "answer"} or "answer call" in name:
+                        return "INCOMING_CALL"
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
         return "UNKNOWN"
 
 
