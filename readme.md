@@ -1,6 +1,6 @@
 ﻿# 🤖 JARVIS (MARK LI) — Advanced AI Assistant & Autonomous Voice Agent
 
-[![Python 3.12](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
 [![Tests](https://img.shields.io/badge/unit%20tests-50%20passed-brightgreen.svg)]()
 [![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
 
@@ -23,7 +23,7 @@ An autonomous, multi-modal personal AI assistant with real-time voice conversati
 | Component | Minimum Requirement | Recommended |
 |---|---|---|
 | **Operating System** | Windows 10/11 (64-bit) | Windows 11 (64-bit) |
-| **Python** | Python 3.12 | Python 3.12 |
+| **Python** | Python 3.11 | Python 3.11 |
 | **GPU (Optional)** | CPU supported | NVIDIA GPU (CUDA 11/12) for fast Whisper STT |
 | **Virtual Audio** | Required for WhatsApp Voice Bridge | [VB-Audio Virtual Cable](https://vb-audio.com/Cable/) |
 | **Local LLM** | Ollama | [Ollama](https://ollama.com/) with llama3.2 |
@@ -35,8 +35,8 @@ An autonomous, multi-modal personal AI assistant with real-time voice conversati
 ### 1. Clone the Repository
 
 `powershell
-git clone https://github.com/deestudio028-droid/jarvis.git
-cd jarvis
+git clone https://github.com/Srinivash29/Jarvis_Project.git
+cd Jarvis_Project
 `
 
 ### 2. Set Up a Python Virtual Environment
@@ -155,7 +155,7 @@ Next Turn Repeats Continuously
 
 ## 🧪 Testing and Verification
 
-Run the automated test suite (50 unit tests covering call logic, audio loopback recovery, VAD adaptation, and LLM 404 resilience):
+Run the automated test suite (46 unit tests covering WhatsApp call logic, audio loopback recovery, VAD adaptation, and LLM 404 resilience):
 
 `powershell
 python -m unittest discover tests
@@ -191,9 +191,11 @@ jarvis/
 │   ├── whatsapp_voice_bridge.py     # 2-way audio call state machine & VAD
 │   ├── whatsapp_desktop_call.py     # WhatsApp Desktop UIA / keyboard automation
 │   ├── whatsapp_monitor.py          # Notification monitoring
+│   ├── system_diagnostics.py        # Read-only system diagnostics
 ├── tests/
 │   ├── test_whatsapp_voice_bridge.py # 50 unit tests for bridge and audio safety
 │   ├── test_whatsapp_desktop_call.py # Tests for UI automation
+│   ├── test_whatsapp_desktop_logic.py # Controller behavior tests
 └── config/
     └── api_keys.json.example        # Configuration template
 `
