@@ -7,7 +7,9 @@
     "llm_url": "http://localhost:11434",
     "plugins_enabled": {
         "whatsapp_monitor": true,
-        "whatsapp_voice_bridge": true
+        "whatsapp_voice_bridge": true,
+        "whatsapp_desktop_call": true,
+        "system_diagnostics": true
     },
     "assistant_name": "JARVIS",
     "user_name": "User",
