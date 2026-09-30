@@ -33,7 +33,7 @@ def run(parameters: dict, player=None, session_memory=None) -> str:
     try:
         cpu = psutil.cpu_percent(interval=0.25)
         memory = psutil.virtual_memory()
-        disk_root = "C:\\" if platform.system() == "Windows" else "/"
+        disk_root = "C:\\\\" if platform.system() == "Windows" else "/"
         disk = psutil.disk_usage(disk_root)
         battery = psutil.sensors_battery()
         uptime = str(timedelta(seconds=max(0, int(time.time() - psutil.boot_time()))))
