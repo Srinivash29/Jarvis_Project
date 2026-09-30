@@ -3,6 +3,8 @@ import time
 import asyncio
 import sys
 import json
+import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 try:
@@ -11,8 +13,9 @@ try:
 except ImportError:
     _GENAI_AVAILABLE = False
 
-# Add core actions to path so we can reuse Mark-LI's built-in send_message
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+# Add core actions to path so we can reuse built-in send_message
+_BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.append(str(_BASE_DIR))
 try:
     from actions.send_message import _send_whatsapp
 except ImportError:
@@ -30,103 +33,319 @@ except ImportError:
 PLUGIN = {
     "name": "whatsapp_monitor",
     "description": (
-        "Turn on or off the WhatsApp auto-responder. "
-        "When active, Jarvis will read Windows System Notifications for WhatsApp messages, "
-        "generate a smart AI response based on the message content, and automatically send it."
+        "Check what WhatsApp replies or incoming messages have arrived, check message history, "
+        "or turn the WhatsApp background monitor/auto-responder on or off. "
+        "Use this tool whenever the user asks 'check what replies came', 'did Sabari reply?', "
+        "'what did they say on WhatsApp?', 'any new messages on WhatsApp', 'check WhatsApp messages', "
+        "or to start/stop WhatsApp background monitoring."
     ),
     "parameters": {
         "type": "OBJECT",
         "properties": {
+            "action": {
+                "type": "STRING",
+                "description": (
+                    "Action to perform: "
+                    "'check' (default) to check current and recent replies/messages, "
+                    "'history' to view recent message logs, "
+                    "'on' or 'start' to start background monitoring, "
+                    "'off' or 'stop' to stop background monitoring, "
+                    "'clear' to clear recent message history."
+                ),
+            },
+            "sender": {
+                "type": "STRING",
+                "description": "Optional contact name to filter replies for (e.g., 'sabari')."
+            },
             "status": {
                 "type": "STRING",
-                "description": "'on' to start monitoring, 'off' to stop monitoring."
-            }
+                "description": "Legacy parameter: 'on' or 'off' (maps to action='on' or 'off')."
+            },
+            "auto_reply": {
+                "type": "BOOLEAN",
+                "description": (
+                    "If true when starting background monitoring, Jarvis will automatically "
+                    "generate and send AI replies. Default is false (listen and alert user only)."
+                ),
+            },
         },
-        "required": ["status"],
     },
 }
 
 _monitor_thread = None
 _monitoring_active = False
 _replied_notification_ids = set()
+_history_lock = threading.Lock()
+_HISTORY_FILE = _BASE_DIR / "memory" / "whatsapp_replies.json"
 
-def _generate_dynamic_reply(sender, message):
-    if not _GENAI_AVAILABLE:
-        return f"Hello, I am Jarvis, Deepak's AI assistant. He is currently busy. I will inform him that you messaged."
-        
+
+def _get_user_name() -> str:
     try:
-        # Load API key from config
-        config_path = Path(__file__).resolve().parent.parent / "config" / "api_keys.json"
+        config_path = _BASE_DIR / "config" / "api_keys.json"
+        if config_path.exists():
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            return cfg.get("user_name", "Sir").strip() or "Sir"
+    except Exception:
+        pass
+    return "Sir"
+
+
+def _load_replies_history() -> list[dict]:
+    with _history_lock:
+        if not _HISTORY_FILE.exists():
+            return []
+        try:
+            with open(_HISTORY_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data if isinstance(data, list) else []
+        except Exception as e:
+            print(f"[WhatsApp Monitor] Error loading history: {e}")
+            return []
+
+
+def _save_replies_history(records: list[dict]):
+    with _history_lock:
+        try:
+            _HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(_HISTORY_FILE, "w", encoding="utf-8") as f:
+                json.dump(records[-50:], f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"[WhatsApp Monitor] Error saving history: {e}")
+
+
+def _record_incoming_message(
+    sender: str,
+    message: str,
+    notif_id=None,
+    time_str: str = None,
+    auto_replied: bool = False,
+    reply_text: str = None,
+) -> dict:
+    records = _load_replies_history()
+    now = datetime.now()
+    if not time_str:
+        time_str = now.strftime("%I:%M %p")
+
+    # Check if this exact message is already in recent records (deduplication)
+    for r in reversed(records[-10:]):
+        if r.get("sender", "").lower() == sender.lower() and r.get("message", "") == message:
+            return r
+
+    entry = {
+        "id": str(notif_id) if notif_id is not None else str(int(time.time() * 1000)),
+        "sender": sender,
+        "message": message,
+        "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "time_str": time_str,
+        "auto_replied": auto_replied,
+        "reply_text": reply_text,
+    }
+    records.append(entry)
+    _save_replies_history(records)
+    return entry
+
+
+def _generate_dynamic_reply(sender: str, message: str) -> str:
+    user_name = _get_user_name()
+    if not _GENAI_AVAILABLE:
+        return f"Hello, I am Jarvis, {user_name}'s AI assistant. He is currently occupied. I will inform him of your message."
+
+    try:
+        config_path = _BASE_DIR / "config" / "api_keys.json"
         with open(config_path, "r", encoding="utf-8") as f:
             cfg = json.load(f)
         api_key = cfg.get("gemini_api_key")
-        
+
         if not api_key:
             raise ValueError("No Gemini API Key found.")
-            
+
         client = genai.Client(api_key=api_key)
-        
+
         prompt = (
-            f"You are Jarvis, Deepak's personal AI assistant. Deepak is currently busy working. "
+            f"You are Jarvis, {user_name}'s personal AI assistant. {user_name} is currently busy. "
             f"You received a WhatsApp message from '{sender}' which says: '{message}'. "
-            f"Write a short, natural, and polite reply on Deepak's behalf. "
-            f"Acknowledge what they said. If it is an important update (like a meeting, emergency, or request), "
-            f"tell them you will convey it to Deepak immediately. "
+            f"Write a short, natural, and polite reply on {user_name}'s behalf. "
+            f"Acknowledge what they said. If it is an important update or question, "
+            f"let them know you will convey it to {user_name} immediately. "
             f"Keep it under 2 sentences. Reply directly as Jarvis."
         )
-        
-        response = client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=prompt
-        )
-        return response.text.strip()
+
+        # Try gemini-3.8-flash first, fallback to gemini-2.0-flash
+        for model_name in ('gemini-3.8-flash', 'gemini-2.0-flash'):
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt
+                )
+                if response and response.text:
+                    return response.text.strip()
+            except Exception as model_err:
+                print(f"[WhatsApp Monitor] Model {model_name} failed: {model_err}")
+                continue
+
+        return f"Hello, I am Jarvis. {user_name} is currently occupied, but I have noted your message and will convey it to him."
     except Exception as e:
         print(f"[WhatsApp Monitor] AI generation failed: {e}")
-        return f"Hello, I am Jarvis. Deepak is currently busy, but I will convey your message to him."
+        return f"Hello, I am Jarvis. {user_name} is currently busy, but I will convey your message to him."
 
-async def _get_whatsapp_notifications():
+
+async def _get_whatsapp_notifications_async() -> list[dict]:
     if not _WINSDK_AVAILABLE:
         return []
-        
-    listener = UserNotificationListener.current
-    access = await listener.request_access_async()
-    
-    if access != 1:  # 1 means Allowed
-        print("[WhatsApp Monitor] Windows Notification access denied by user/system.")
-        return []
-        
-    notifs = await listener.get_notifications_async(NotificationKinds.TOAST)
-    
-    results = []
-    for n in notifs:
-        try:
-            app_name = n.app_info.display_info.display_name
-            if "WhatsApp" in app_name:
+
+    try:
+        listener = UserNotificationListener.current
+        access = await listener.request_access_async()
+        if access != 1:  # 1 == Allowed
+            print("[WhatsApp Monitor] Windows Notification access denied by user/system.")
+            return []
+
+        notifs = await listener.get_notifications_async(NotificationKinds.TOAST)
+        results = []
+
+        for n in notifs:
+            try:
+                app_info = n.app_info
+                display_name = (app_info.display_info.display_name or "") if (app_info and app_info.display_info) else ""
+                app_id = getattr(app_info, "id", "") or ""
+                aumid = getattr(app_info, "app_user_model_id", "") or ""
+
+                is_wa = any("whatsapp" in x.lower() for x in (display_name, app_id, aumid))
+                if not is_wa:
+                    continue
+
                 bindings = n.notification.visual.bindings
                 texts = []
                 for b in bindings:
                     for t in b.get_text_elements():
-                        texts.append(t.text)
-                
+                        val = (t.text or "").strip()
+                        if val:
+                            texts.append(val)
+
                 if texts:
+                    if len(texts) == 1:
+                        sender = "WhatsApp"
+                        msg = texts[0]
+                    else:
+                        sender = texts[0]
+                        msg = " \n".join(texts[1:])
+
+                    # Format creation time if available
+                    creation_time = getattr(n, "creation_time", None)
+                    time_str = ""
+                    if creation_time:
+                        try:
+                            # Convert to local time string
+                            local_dt = creation_time.astimezone() if hasattr(creation_time, "astimezone") else creation_time
+                            time_str = local_dt.strftime("%I:%M %p")
+                        except Exception:
+                            time_str = ""
+
                     results.append({
                         "id": n.id,
-                        "sender": texts[0],
-                        "message": texts[1] if len(texts) > 1 else "",
+                        "sender": sender,
+                        "message": msg,
+                        "time_str": time_str,
                     })
-        except Exception as e:
-            pass
-            
-    return results
+            except Exception:
+                pass
 
-def _whatsapp_monitor_loop(player):
+        return results
+    except Exception as e:
+        print(f"[WhatsApp Monitor] Error reading toast notifications: {e}")
+        return []
+
+
+def _get_whatsapp_notifications() -> list[dict]:
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        notifs = loop.run_until_complete(_get_whatsapp_notifications_async())
+        loop.close()
+        return notifs
+    except Exception as e:
+        print(f"[WhatsApp Monitor] Event loop error: {e}")
+        return []
+
+
+def _check_replies(sender_filter: str = None, player=None) -> str:
+    """
+    Check for current notifications and recent history of incoming WhatsApp replies.
+    Optionally filters by sender contact name (e.g. 'sabari').
+    """
+    # 1. Fetch live Windows notifications
+    live_notifs = _get_whatsapp_notifications()
+    for notif in live_notifs:
+        _record_incoming_message(
+            sender=notif["sender"],
+            message=notif["message"],
+            notif_id=notif["id"],
+            time_str=notif.get("time_str"),
+        )
+
+    # 2. Load unified history
+    all_replies = _load_replies_history()
+
+    # Filter by sender if requested
+    target_sender = (sender_filter or "").strip().lower()
+    if target_sender:
+        matched = [
+            r for r in all_replies
+            if target_sender in r.get("sender", "").lower() or r.get("sender", "").lower() in target_sender
+        ]
+        if matched:
+            # Latest messages first
+            matched_sorted = sorted(matched, key=lambda x: x.get("timestamp", ""), reverse=True)
+            latest = matched_sorted[0]
+            actual_sender = latest.get("sender", sender_filter)
+            msg_text = latest.get("message", "")
+            msg_time = latest.get("time_str") or "recently"
+
+            if len(matched_sorted) == 1:
+                res = f"Sir, {actual_sender} replied: \"{msg_text}\" at {msg_time}."
+            else:
+                lines = [f"Sir, here are the recent replies from {actual_sender}:"]
+                for i, m in enumerate(matched_sorted[:3], 1):
+                    t = m.get("time_str") or "recently"
+                    lines.append(f"{i}. \"{m.get('message')}\" ({t})")
+                res = "\n".join(lines)
+
+            if latest.get("auto_replied") and latest.get("reply_text"):
+                res += f"\n(Auto-replied: \"{latest.get('reply_text')}\")"
+
+            if player:
+                player.write_log(f"JARVIS: 📨 {res}")
+            return res
+        else:
+            return f"Sir, I checked WhatsApp, but no new replies have arrived from {sender_filter} yet."
+
+    # If no sender specified, return all recent replies
+    if all_replies:
+        recent = sorted(all_replies, key=lambda x: x.get("timestamp", ""), reverse=True)[:5]
+        lines = ["Sir, here are the recent incoming WhatsApp messages:"]
+        for i, r in enumerate(recent, 1):
+            s = r.get("sender", "Unknown")
+            m = r.get("message", "")
+            t = r.get("time_str") or "recently"
+            lines.append(f"{i}. {s}: \"{m}\" ({t})")
+        res = "\n".join(lines)
+        if player:
+            player.write_log(f"JARVIS: 📨 Checked WhatsApp: {len(recent)} recent reply/replies found.")
+        return res
+
+    return "Sir, I checked WhatsApp notifications and recent logs, but there are no new replies or messages."
+
+
+def _whatsapp_monitor_loop(player, auto_reply: bool = False):
     global _monitoring_active, _replied_notification_ids
-    
-    print("[WhatsApp Monitor] Background thread started with Dynamic AI Replies.")
-    
+
+    mode_label = "Auto-Reply ON" if auto_reply else "Alerts Only"
+    print(f"[WhatsApp Monitor] Background thread started ({mode_label}).")
+
     if player:
         try:
-            player.write_log("JARVIS: WhatsApp auto-reply with Smart AI is now active.")
+            player.write_log(f"JARVIS: WhatsApp monitor active ({mode_label}).")
         except Exception:
             pass
 
@@ -134,100 +353,158 @@ def _whatsapp_monitor_loop(player):
     asyncio.set_event_loop(loop)
 
     while _monitoring_active:
-        if _WINSDK_AVAILABLE and _send_whatsapp:
+        if _WINSDK_AVAILABLE:
             try:
-                notifications = loop.run_until_complete(_get_whatsapp_notifications())
-                
+                notifications = loop.run_until_complete(_get_whatsapp_notifications_async())
+
                 for notif in notifications:
                     notif_id = notif["id"]
                     sender = notif["sender"]
                     message = notif["message"]
-                    
+                    time_str = notif.get("time_str")
+
                     if notif_id not in _replied_notification_ids:
                         _replied_notification_ids.add(notif_id)
-                        
+                        user_name = _get_user_name()
                         print(f"[WhatsApp Monitor] New message from {sender}: {message}")
-                        
-                        # 1. Generate Smart Reply
-                        reply_text = _generate_dynamic_reply(sender, message)
-                        
-                        # 2. Open WhatsApp and send
-                        result_status = _send_whatsapp(sender, reply_text)
-                        
-                        # 3. Unfocus the chat so follow-up messages trigger notifications again!
-                        try:
-                            import pyautogui
-                            time.sleep(1)
-                            pyautogui.press('esc')  # Deselect the chat
-                            time.sleep(0.5)
-                            pyautogui.hotkey('win', 'down') # Minimize the window
-                        except Exception as e:
-                            print(f"[WhatsApp Monitor] Could not minimize window: {e}")
-                        
-                        # 4. Notify srinivash via JARVIS UI
-                        alert_msg = f"Sir, '{sender}' sent you a message: '{message}'. I replied with: '{reply_text}'"
-                        if player:
-                            player.write_log(f"JARVIS: 📨 {alert_msg}")
-                            # Writing twice to make sure it's prominent in the UI logs
-                            print(f"[JARVIS UI ALERT] {alert_msg}")
-                            
-                            # 5. INJECT into Jarvis's Brain (LLM Context) so he remembers it!
-                            if hasattr(player, 'on_text_command') and callable(player.on_text_command):
-                                internal_memory = (
-                                    f"[SYSTEM_ALERT] You just automatically replied to a WhatsApp message in the background.\n"
-                                    f"Sender: {sender}\n"
-                                    f"Their message: {message}\n"
-                                    f"Your reply: {reply_text}\n\n"
-                                    f"Keep this in your memory. DO NOT speak or reply to this alert out loud unless Deepak explicitly asks if you sent any messages."
-                                )
-                                try:
-                                    player.on_text_command(internal_memory)
-                                except Exception as e:
-                                    print(f"[WhatsApp Monitor] Failed to update Jarvis memory: {e}")
-                            
+
+                        if auto_reply and _send_whatsapp:
+                            # 1. Generate Smart Reply
+                            reply_text = _generate_dynamic_reply(sender, message)
+
+                            # 2. Open WhatsApp and send
+                            _send_whatsapp(sender, reply_text)
+
+                            # 3. Record in history
+                            _record_incoming_message(
+                                sender=sender,
+                                message=message,
+                                notif_id=notif_id,
+                                time_str=time_str,
+                                auto_replied=True,
+                                reply_text=reply_text,
+                            )
+
+                            # 4. WhatsApp is automatically closed by _send_whatsapp.
+                            # Fallback check to ensure WhatsApp window is closed:
+                            try:
+                                import pyautogui
+                                time.sleep(0.3)
+                                pyautogui.hotkey('alt', 'f4')
+                            except Exception:
+                                pass
+
+                            # 5. Notify user via UI
+                            alert_msg = f"Sir, '{sender}' messaged: '{message}'. I auto-replied: '{reply_text}'"
+                            if player:
+                                player.write_log(f"JARVIS: 📨 {alert_msg}")
+                                if hasattr(player, 'on_text_command') and callable(player.on_text_command):
+                                    user_name = _get_user_name()
+                                    internal_memory = (
+                                        f"[SYSTEM_ALERT] Automatically replied to WhatsApp message from {sender}: '{message}' with '{reply_text}'. "
+                                        f"Keep this in memory for {user_name}."
+                                    )
+                                    try:
+                                        player.on_text_command(internal_memory)
+                                    except Exception:
+                                        pass
+                        else:
+                            # Listen and Notify mode (No auto-send)
+                            _record_incoming_message(
+                                sender=sender,
+                                message=message,
+                                notif_id=notif_id,
+                                time_str=time_str,
+                                auto_replied=False,
+                            )
+
+                            alert_msg = f"Sir, '{sender}' sent you a WhatsApp message: '{message}'"
+                            if player:
+                                player.write_log(f"JARVIS: 📨 {alert_msg}")
+                                # If Live session audio or proactive announcement is supported
+                                if hasattr(player, 'request_say') and callable(player.request_say):
+                                    try:
+                                        player.request_say(alert_msg)
+                                    except Exception:
+                                        pass
+                                elif hasattr(player, 'on_text_command') and callable(player.on_text_command):
+                                    try:
+                                        player.on_text_command(f"[SYSTEM_ALERT] New WhatsApp message from {sender}: '{message}'. Inform {user_name} naturally.")
+                                    except Exception:
+                                        pass
+
             except Exception as e:
                 print(f"[WhatsApp Monitor] Error processing notifications: {e}")
         else:
             time.sleep(5)
-            
+
         time.sleep(3)
 
     loop.close()
     print("[WhatsApp Monitor] Background thread stopped.")
 
+
 def run(parameters: dict, player=None, session_memory=None) -> str:
     global _monitor_thread, _monitoring_active
-    
-    status = parameters.get("status", "off").lower()
-    
-    if status == "on":
+
+    params = parameters or {}
+    action = params.get("action", "").lower().strip()
+    status = params.get("status", "").lower().strip()
+    sender = params.get("sender", "").strip()
+    auto_reply = bool(params.get("auto_reply", False))
+
+    # Normalize action / status
+    if not action and status:
+        action = status
+
+    # 1. Start monitoring
+    if action in ("on", "start", "enable"):
         if _monitoring_active:
-            return "WhatsApp smart auto-reply is already monitoring."
-            
+            return "WhatsApp monitor is already active."
+
         _monitoring_active = True
         _monitor_thread = threading.Thread(
             target=_whatsapp_monitor_loop,
-            args=(player,),
+            args=(player, auto_reply),
             daemon=True
         )
         _monitor_thread.start()
-        
-        missing_libs = []
+
+        missing = []
         if not _WINSDK_AVAILABLE:
-            missing_libs.append("winsdk")
-        if not _GENAI_AVAILABLE:
-            missing_libs.append("google-generativeai")
-            
-        if missing_libs:
-            return f"Monitoring started, but missing libraries: {', '.join(missing_libs)}. Run pip install."
-            
-        return "WhatsApp smart auto-reply enabled. I will read incoming messages, think of a contextual reply, and send it on your behalf."
-        
-    elif status == "off":
+            missing.append("winsdk")
+        if auto_reply and not _GENAI_AVAILABLE:
+            missing.append("google-genai")
+
+        mode = "auto-reply enabled" if auto_reply else "listening and notification mode"
+        if missing:
+            return f"WhatsApp monitoring started in {mode}, but missing: {', '.join(missing)}."
+
+        return f"WhatsApp monitoring enabled ({mode}). I will watch for incoming messages."
+
+    # 2. Stop monitoring
+    elif action in ("off", "stop", "disable"):
         if not _monitoring_active:
-            return "WhatsApp monitoring is already off."
-            
+            return "WhatsApp monitoring is currently off."
+
         _monitoring_active = False
         return "I have stopped monitoring WhatsApp."
-        
-    return "Invalid status. Use 'on' or 'off'."
+
+    # 3. View history
+    elif action in ("history", "log", "logs"):
+        records = _load_replies_history()
+        if not records:
+            return "No recorded WhatsApp messages in history."
+        lines = ["Recent WhatsApp message history:"]
+        for r in records[-8:]:
+            ar = " [Auto-replied]" if r.get("auto_replied") else ""
+            lines.append(f"- {r.get('sender')}: \"{r.get('message')}\" ({r.get('time_str', '')}){ar}")
+        return "\n".join(lines)
+
+    # 4. Clear history
+    elif action in ("clear", "reset"):
+        _save_replies_history([])
+        return "WhatsApp message history has been cleared."
+
+    # 5. Default / 'check' / 'read' -> Check what replies came
+    return _check_replies(sender_filter=sender, player=player)

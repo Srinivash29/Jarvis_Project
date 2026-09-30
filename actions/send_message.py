@@ -134,7 +134,36 @@ def _search_in_app(query: str) -> None:
     _clear_and_paste(query)
     time.sleep(1.0)
 
-def _desktop_send(app_name: str, receiver: str, message: str) -> str:
+def _close_app_window(app_name: str) -> None:
+    _require_pyautogui()
+    os_name = _get_os()
+    time.sleep(0.8)  # Brief wait to ensure message dispatch over network
+
+    if os_name == "mac":
+        pyautogui.hotkey("command", "q")
+        return
+
+    # Windows / Linux: close active window with Alt+F4
+    pyautogui.hotkey("alt", "f4")
+    time.sleep(0.4)
+
+    # Secondary guarantee on Windows: send WM_CLOSE to window if still open
+    if os_name == "windows":
+        try:
+            import win32gui
+            import win32con
+            app_lower = app_name.lower()
+            def _enum_cb(hwnd, _):
+                if win32gui.IsWindowVisible(hwnd):
+                    title = win32gui.GetWindowText(hwnd)
+                    if app_lower in title.lower():
+                        win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+            win32gui.EnumWindows(_enum_cb, None)
+        except Exception:
+            pass
+
+
+def _desktop_send(app_name: str, receiver: str, message: str, auto_close: bool = False) -> str:
     if not _open_app(app_name):
         return f"Could not open {app_name}."
 
@@ -146,11 +175,15 @@ def _desktop_send(app_name: str, receiver: str, message: str) -> str:
     _paste_text(message)
     time.sleep(0.2)
     pyautogui.press("enter")
-    time.sleep(0.3)
+    time.sleep(0.5)
+
+    if auto_close:
+        _close_app_window(app_name)
+
     return f"Message sent to {receiver} via {app_name}."
 
 def _send_whatsapp(receiver: str, message: str) -> str:
-    return _desktop_send("WhatsApp", receiver, message)
+    return _desktop_send("WhatsApp", receiver, message, auto_close=True)
 
 def _send_telegram(receiver: str, message: str) -> str:
     return _desktop_send("Telegram", receiver, message)
