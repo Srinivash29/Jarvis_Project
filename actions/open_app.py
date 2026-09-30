@@ -77,6 +77,68 @@ def _normalize(raw: str) -> str:
 
     return raw  
 
+def _is_windows_process_running(process_names: tuple[str, ...]) -> bool:
+    if not _PSUTIL:
+        return False
+    wanted = {name.lower() for name in process_names}
+    try:
+        for proc in psutil.process_iter(["name"]):
+            try:
+                if (proc.info.get("name") or "").lower() in wanted:
+                    return True
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+    except Exception:
+        pass
+    return False
+
+
+def _launch_whatsapp_windows() -> bool:
+    """Launch modern Microsoft Store WhatsApp on Windows."""
+    if _is_windows_process_running(("WhatsApp.Root.exe", "WhatsApp.exe")):
+        return True
+
+    try:
+        ps = ("$app = Get-StartApps | "
+              "Where-Object { $_.Name -like '*WhatsApp*' } | "
+              "Select-Object -First 1; "
+              "if ($app) { $app.AppID }")
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command", ps],
+            capture_output=True, text=True, timeout=8
+        )
+        lines = (result.stdout or "").strip().splitlines()
+        app_id = lines[-1].strip() if lines else ""
+        if app_id:
+            subprocess.Popen(
+                ["explorer.exe", "shell:AppsFolder\\" + app_id],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            for _ in range(12):
+                time.sleep(0.5)
+                if _is_windows_process_running(("WhatsApp.Root.exe", "WhatsApp.exe")):
+                    return True
+    except Exception as e:
+        print(f"[open_app] WhatsApp AppsFolder launch failed: {e}")
+
+    try:
+        import pyautogui
+        pyautogui.PAUSE = 0.1
+        pyautogui.press("win")
+        time.sleep(0.7)
+        pyautogui.write("WhatsApp", interval=0.05)
+        time.sleep(1.0)
+        pyautogui.press("enter")
+        for _ in range(12):
+            time.sleep(0.5)
+            if _is_windows_process_running(("WhatsApp.Root.exe", "WhatsApp.exe")):
+                return True
+    except Exception as e:
+        print(f"[open_app] WhatsApp Start-menu launch failed: {e}")
+
+    return False
+
+
 def _launch_windows(app_name: str) -> bool:
 
     if shutil.which(app_name) or shutil.which(app_name.split(".")[0]):
@@ -251,6 +313,13 @@ def open_app(
     launcher = _OS_LAUNCHERS.get(_SYSTEM)
     if launcher is None:
         return f"Unsupported operating system: {_SYSTEM}"
+
+    if _SYSTEM == "Windows" and app_name.lower().strip() in {"whatsapp", "whatsapp desktop"}:
+        if _launch_whatsapp_windows():
+            if player:
+                player.write_log("[open_app] WhatsApp Desktop launched/detected")
+            return "Opened WhatsApp Desktop."
+        return "Could not launch WhatsApp Desktop. Please verify that it is installed."
 
     normalized = _normalize(app_name)
     print(f"[open_app] Launching: '{app_name}' → '{normalized}' ({_SYSTEM})")
