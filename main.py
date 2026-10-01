@@ -575,8 +575,9 @@ TOOL_DECLARATIONS = [
         "name": "whatsapp_call",
         "description": (
             "Initiates WhatsApp voice or video calls, answers incoming calls, declines calls, "
-            "or hangs up calls on WhatsApp Desktop. Call this whenever the user asks to call someone "
-            "on WhatsApp (e.g. 'call Arun on WhatsApp', 'video call Amma', 'end WhatsApp call', etc.)."
+            "or hangs up calls on WhatsApp Desktop. Call this immediately whenever the user asks to call "
+            "any contact (e.g. 'call Arun', 'call Arun on WhatsApp', 'video call Amma', 'Arun-ku call pannu', 'end call'). "
+            "Always default to this tool for any contact calling request."
         ),
         "parameters": {
             "type": "OBJECT",
@@ -982,6 +983,10 @@ class JarvisLive:
                     call_args["intent"] = call_args.pop("call_type")
                 if "contact" in call_args and "contact_name" not in call_args:
                     call_args["contact_name"] = call_args.pop("contact")
+                for alt_key in ("name", "person", "recipient", "target", "query"):
+                    if not call_args.get("contact_name") and call_args.get(alt_key):
+                        call_args["contact_name"] = call_args.pop(alt_key)
+                        break
                 if not call_args.get("intent"):
                     call_args["intent"] = "voice_call"
 

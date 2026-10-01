@@ -8,13 +8,13 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg:      #07090f;
-      --surface: rgba(255,255,255,0.04);
-      --border:  rgba(255,255,255,0.07);
-      --accent:  #6366f1;
-      --adim:    rgba(99,102,241,0.14);
-      --text:    #dde3ed;
-      --muted:   #5e6a7e;
+      --bg:      #040301;
+      --surface: rgba(255,170,0,0.06);
+      --border:  rgba(255,170,0,0.15);
+      --accent:  #ffaa00;
+      --adim:    rgba(255,170,0,0.13);
+      --text:    #fff0db;
+      --muted:   #9e7b4e;
       --green:   #22c55e;
       --gdim:    rgba(34,197,94,0.14);
     }
@@ -28,9 +28,9 @@
     header {
       flex-shrink: 0; display: flex; align-items: center; gap: 10px;
       padding: 12px 16px; border-bottom: 1px solid var(--border);
-      background: rgba(7,9,15,0.95);
+      background: rgba(4,3,1,0.96);
     }
-    .logo { font-size: 15px; font-weight: 700; letter-spacing: 6px; }
+    .logo { font-size: 15px; font-weight: 700; letter-spacing: 6px; display: flex; align-items: center; }
     .logo em { color: var(--accent); font-style: normal; }
     .pill {
       display: flex; align-items: center; gap: 6px; padding: 4px 11px;
@@ -57,7 +57,7 @@
     main::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
     .msg { max-width: 82%; padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.55; animation: pop 0.18s ease; }
     @keyframes pop { from { opacity:0; transform:translateY(4px); } }
-    .msg-j   { align-self:flex-start; background:var(--adim);   border:1px solid rgba(99,102,241,0.18); border-bottom-left-radius:4px; }
+    .msg-j   { align-self:flex-start; background:var(--adim);   border:1px solid rgba(255,170,0,0.22); border-bottom-left-radius:4px; }
     .msg-u   { align-self:flex-end;   background:var(--surface); border:1px solid var(--border);        border-bottom-right-radius:4px; }
     .msg-sys { align-self:center; font-size:11px; color:var(--muted); padding:2px 0; background:transparent; border:none; letter-spacing:0.3px; }
     .lbl { font-size:9px; font-weight:700; letter-spacing:2px; text-transform:uppercase; opacity:0.45; margin-bottom:4px; }
@@ -86,14 +86,14 @@
     .fc-dl:hover { opacity: 0.8; }
 
     /* ── FOOTER ── */
-    footer { flex-shrink:0; padding:10px 14px; border-top:1px solid var(--border); background:rgba(7,9,15,0.95); display:flex; gap:8px; align-items:center; }
+    footer { flex-shrink:0; padding:10px 14px; border-top:1px solid var(--border); background:rgba(4,3,1,0.96); display:flex; gap:8px; align-items:center; }
     #inp { flex:1; padding:11px 14px; background:var(--surface); border:1.5px solid var(--border); border-radius:12px; color:var(--text); font-size:14px; outline:none; transition:border-color 0.15s; }
     #inp:focus { border-color: var(--accent); }
     #inp::placeholder { color: var(--muted); }
     .btn { padding:11px 15px; border:none; border-radius:12px; font-size:11px; font-weight:700; letter-spacing:1.5px; cursor:pointer; transition:opacity 0.15s,transform 0.1s; }
     .btn:active { transform: scale(0.96); }
     .btn:hover  { opacity: 0.82; }
-    .btn-send { background: var(--accent); color: #fff; }
+    .btn-send { background: var(--accent); color: #000; font-weight: 800; }
     .btn-wake { background:var(--surface); border:1px solid var(--border); color:var(--muted); display:none; }
     .btn-wake.show { display:block; color:var(--green); border-color:rgba(34,197,94,0.35); }
     .btn-attach {
@@ -124,7 +124,7 @@
     /* ── QUICK ACTION BAR ── */
     .quick-bar {
       display: flex; gap: 6px; padding: 7px 12px;
-      background: rgba(11, 15, 25, 0.95);
+      background: rgba(8, 6, 2, 0.96);
       border-top: 1px solid var(--border);
       overflow-x: auto; -webkit-overflow-scrolling: touch;
       flex-shrink: 0;
@@ -137,7 +137,7 @@
       white-space: nowrap; cursor: pointer; transition: all 0.15s;
     }
     .qb-btn:hover, .qb-btn:active {
-      color: var(--accent); border-color: var(--accent); background: rgba(99,102,241,0.12);
+      color: var(--accent); border-color: var(--accent); background: rgba(255,170,0,0.14);
     }
 
     /* ── TOAST ── */
@@ -155,7 +155,7 @@
 <body>
   <div id="toast"></div>
   <header>
-    <div class="logo"><em>J</em>ARVIS</div>
+    <div class="logo"><canvas id="mini-reactor" width="28" height="28" style="vertical-align: middle; margin-right: 8px; border-radius: 50%;"></canvas><em>J</em>ARVIS</div>
     <div class="pill" id="pill"><span class="dot"></span><span id="st">Connecting</span></div>
     <div class="enc-badge" id="enc">AES-256</div>
     <div class="spacer"></div>
@@ -593,6 +593,84 @@
       }
       _micIdle();
     }
+
+    // ── Mini Arc Reactor (Golden 3D Hologram Core) ───────────────────────────
+    (function initMiniReactor() {
+      const cvs = document.getElementById('mini-reactor');
+      if (!cvs) return;
+      const ctx = cvs.getContext('2d');
+      let tick = 0;
+      function render() {
+        tick++;
+        const W = cvs.width, H = cvs.height, cx = W / 2, cy = H / 2, fw = Math.min(W, H);
+        ctx.clearRect(0, 0, W, H);
+        ctx.fillStyle = '#040301';
+        ctx.fillRect(0, 0, W, H);
+
+        const t = tick * 0.04;
+        const r_sphere = fw * 0.23;
+        const cos_y = Math.cos(t * 0.4), sin_y = Math.sin(t * 0.4);
+        const cos_x = Math.cos(0.28), sin_x = Math.sin(0.28);
+
+        // Rotating rays
+        ctx.lineWidth = 1.2;
+        for (let a = 0; a < 360; a += 45) {
+          const rad = (a + tick * 0.8) * Math.PI / 180;
+          const rlen = fw * 0.48;
+          const grad = ctx.createLinearGradient(cx, cy, cx + rlen * Math.cos(rad), cy + rlen * Math.sin(rad));
+          grad.addColorStop(0, 'rgba(255, 255, 200, 0.9)');
+          grad.addColorStop(0.3, 'rgba(255, 170, 0, 0.6)');
+          grad.addColorStop(1, 'rgba(255, 100, 0, 0)');
+          ctx.strokeStyle = grad;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx + rlen * Math.cos(rad), cy + rlen * Math.sin(rad));
+          ctx.stroke();
+        }
+
+        // 3D wireframe lat/long
+        ctx.strokeStyle = 'rgba(255, 170, 20, 0.55)';
+        ctx.lineWidth = 0.7;
+        for (let lat = -45; lat <= 45; lat += 45) {
+          const lat_r = lat * Math.PI / 180;
+          ctx.beginPath();
+          let first = true;
+          for (let lon = 0; lon <= 360; lon += 30) {
+            const lon_r = lon * Math.PI / 180;
+            const x0 = r_sphere * Math.cos(lat_r) * Math.cos(lon_r);
+            const y0 = r_sphere * Math.sin(lat_r);
+            const z0 = r_sphere * Math.cos(lat_r) * Math.sin(lon_r);
+            const x1 = x0 * cos_y + z0 * sin_y;
+            const z1 = -x0 * sin_y + z0 * cos_y;
+            const y1 = y0 * cos_x - z1 * sin_x;
+            const px = cx + x1, py = cy + y1;
+            if (first) { ctx.moveTo(px, py); first = false; } else { ctx.lineTo(px, py); }
+          }
+          ctx.stroke();
+        }
+
+        // Outer glowing orbital arc
+        ctx.strokeStyle = 'rgba(255, 170, 0, 0.85)';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.arc(cx, cy, fw * 0.38, (t * 0.6) % (Math.PI * 2), ((t * 0.6) + 1.4) % (Math.PI * 2));
+        ctx.stroke();
+
+        // Glowing solar core
+        const radG = ctx.createRadialGradient(cx, cy, 0, cx, cy, fw * 0.16);
+        radG.addColorStop(0, '#ffffff');
+        radG.addColorStop(0.3, '#ffea55');
+        radG.addColorStop(0.7, '#ff9900');
+        radG.addColorStop(1, 'rgba(255, 100, 0, 0)');
+        ctx.fillStyle = radG;
+        ctx.beginPath();
+        ctx.arc(cx, cy, fw * 0.16, 0, Math.PI * 2);
+        ctx.fill();
+
+        requestAnimationFrame(render);
+      }
+      render();
+    })();
   </script>
 </body>
 </html>

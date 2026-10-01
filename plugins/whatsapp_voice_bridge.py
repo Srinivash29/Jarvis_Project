@@ -5,7 +5,12 @@ import re
 import numpy as np
 import sounddevice as sd
 from enum import Enum
-from plugins.whatsapp_desktop_call import WhatsAppDesktopController
+from plugins.whatsapp_desktop_call import (
+    WhatsAppDesktopController,
+    CALL_RESULT_VERIFIED,
+    CALL_RESULT_UNVERIFIED,
+    CALL_RESULT_FAILED,
+)
 
 class CallState(Enum):
     IDLE = "IDLE"
@@ -119,13 +124,13 @@ class WhatsAppVoiceBridge:
         
         # Use the controller's unified call workflow which handles:
         # search → open contact → find call button → trigger → verify
-        success_call = self.wa_controller.start_voice_call(contact_name)
-        if not success_call or success_call is False:
+        call_result = self.wa_controller.start_voice_call(contact_name)
+        if not call_result or call_result == CALL_RESULT_FAILED:
             self.state = CallState.ERROR
             log_output = "\n".join(self.wa_controller.diagnostic_log)
             return f"Failed to start voice call for {contact_name}.\nLogs:\n{log_output}"
             
-        if success_call == "SUCCESS_VERIFIED":
+        if call_result == CALL_RESULT_VERIFIED:
             self.state = CallState.CONNECTING
             self.log("[JARVIS-WA] Call verified as CONNECTING/OUTGOING via UIA.")
             logs.append("[JARVIS-WA] Call verified as CONNECTING/OUTGOING via UIA.")
