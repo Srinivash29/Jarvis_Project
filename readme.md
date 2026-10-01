@@ -1,4 +1,4 @@
-﻿# 🤖 JARVIS (MARK LI) — Advanced AI Assistant & Autonomous Voice Agent
+# 🤖 JARVIS (MARK LI) — Advanced AI Assistant & Autonomous Voice Agent
 
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
 [![Tests](https://img.shields.io/badge/unit%20tests-50%20passed-brightgreen.svg)]()
@@ -116,6 +116,44 @@ Starts the futuristic PyQt6 HUD with visual waveforms, telemetry, camera feed, a
 `powershell
 python main.py
 `
+
+### 📱 Connecting JARVIS to Your Phone
+
+#### Method 1: Web Companion App (Instant Local Wi-Fi Pairing)
+1. Launch JARVIS (`python main.py` or double-click `run_jarvis.bat`).
+2. Click the glowing **`📱 CONNECT PHONE`** button on the top HUD header, or say:
+   > *"Jarvis, connect to my phone"* or *"Jarvis, show the QR code"*
+3. A pairing overlay pops up with an instant QR code, local URL (`http://<your-pc-ip>:8000`), and a 6-character PIN.
+4. **Scan the QR code with your phone camera** (iPhone / Android). It connects immediately with zero SSL certificate errors!
+5. **Mobile Companion Features**:
+   - ⚡ **One-Tap Quick Actions**: Live CPU/RAM stats, PC screenshots, volume up/down/mute, play/pause, and PC lock.
+   - 💬 **2-Way Chat**: Type any command or question; see JARVIS's voice responses live on your phone.
+   - 🎙️ **Voice Commands**: Dictate using your phone's native keyboard mic key or switch to HTTPS port 8001 for live mic streaming.
+   - 📎 **File Transfer**: Send photos and files directly from your phone to your PC's uploads folder.
+   - 🟢 **Live Link Status**: The PC HUD displays `● PHONE LINKED` in green as soon as your phone pairs.
+
+#### Method 2: Telegram Bot Bridge (Anywhere in the World over 4G/5G/Wi-Fi)
+1. Message [@BotFather](https://t.me/botfather) on Telegram to create a free bot and copy your bot token.
+2. In `config/api_keys.json`, add:
+   ```json
+   "telegram_bot_token": "YOUR_TELEGRAM_BOT_TOKEN"
+   ```
+3. Start JARVIS. Open Telegram on your phone and send `/start` to your bot.
+4. You can now chat with JARVIS, check `/status`, receive screenshots with `/screen`, and execute PC commands from anywhere!
+
+
+### 📞 WhatsApp Calling (Voice & Video)
+JARVIS can now manage WhatsApp Desktop voice and video calls seamlessly:
+- **Voice Commands**:
+  - *"Jarvis, call Arun on WhatsApp"*
+  - *"Jarvis, video call Mom on WhatsApp"*
+  - *"Jarvis, answer the WhatsApp call"*
+  - *"Jarvis, end WhatsApp call"*
+  - *"WhatsApp-la Amma-ku call pannu"* (Tanglish NLP supported!)
+- **Desktop Controls**: Open the top Quick Drawer (`⚙`) and click **`📞 CALL ON WHATSAPP`** to enter a contact name.
+- **Mobile Companion App**: Tap **`📞 Call WA`** or **`⏹️ End WA`** directly from your phone's quick bar.
+- **Auto-Launch**: Automatically opens WhatsApp Desktop via protocol handler if it isn't running.
+- **Robust UI Automation**: Fast Win32 UIA navigation with intelligent dynamic geometry fallback.
 
 ### Launching the Autonomous WhatsApp Voice Bridge
 Initiates an autonomous 2-way AI phone conversation with a specific contact:

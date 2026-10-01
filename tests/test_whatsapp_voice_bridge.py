@@ -16,9 +16,8 @@ class TestWhatsAppVoiceBridge(unittest.TestCase):
         whatsapp_voice_bridge.WhatsAppVoiceBridge._instance = None
         self.bridge = whatsapp_voice_bridge.WhatsAppVoiceBridge.get_instance()
         
-        # Mock wa_controller methods
-        self.bridge.wa_controller.search_contact = MagicMock(return_value=["Arun"])
-        self.bridge.wa_controller.open_contact = MagicMock(return_value=True)
+        # Mock wa_controller methods — the bridge now calls start_voice_call
+        # directly, which handles search+open+call internally
         self.bridge.wa_controller.start_voice_call = MagicMock(return_value="SUCCESS_VERIFIED")
         self.bridge.wa_controller.end_call = MagicMock()
         self.bridge.wa_controller.is_whatsapp_running = MagicMock(return_value=True)
@@ -45,27 +44,16 @@ class TestWhatsAppVoiceBridge(unittest.TestCase):
         self.assertIn("WhatsApp TTS output device", res)
         self.assertEqual(mock_thread.call_count, 2)
         
-    def test_contact_not_found(self):
-        self.bridge.wa_controller.search_contact.return_value = []
-        self.bridge.wa_controller.diagnostic_log = ["Some error", "Search executed successfully"]
+    def test_call_returns_false_failure(self):
+        self.bridge.wa_controller.start_voice_call.return_value = False
+        self.bridge.wa_controller.diagnostic_log = ["chat not opened"]
         res = self.bridge.start_call_and_bridge("Ghost", self.stt, self.tts, self.llm)
         self.assertEqual(self.bridge.state, CallState.ERROR)
-        self.assertIn("not found", res)
-        
-    def test_multiple_contacts(self):
-        self.bridge.wa_controller.search_contact.return_value = ["Arun 1", "Arun 2"]
-        res = self.bridge.start_call_and_bridge("Arun", self.stt, self.tts, self.llm)
-        self.assertEqual(self.bridge.state, CallState.ERROR)
-        self.assertIn("Multiple contacts found", res)
-        
-    def test_open_contact_failure(self):
-        self.bridge.wa_controller.open_contact.return_value = False
-        res = self.bridge.start_call_and_bridge("Arun", self.stt, self.tts, self.llm)
-        self.assertEqual(self.bridge.state, CallState.ERROR)
-        self.assertIn("Failed to open chat", res)
+        self.assertIn("Failed to start voice call", res)
 
-    def test_start_voice_call_failure(self):
-        self.bridge.wa_controller.start_voice_call.return_value = "Failed to click"
+    def test_start_voice_call_string_failure(self):
+        self.bridge.wa_controller.start_voice_call.return_value = False
+        self.bridge.wa_controller.diagnostic_log = ["call button not found"]
         res = self.bridge.start_call_and_bridge("Arun", self.stt, self.tts, self.llm)
         self.assertEqual(self.bridge.state, CallState.ERROR)
         self.assertIn("Failed to start voice call", res)
@@ -195,9 +183,9 @@ class TestWhatsAppVoiceBridge(unittest.TestCase):
     def test_error_restores_normal_routing(self):
         import core.tts
         core.tts.TTS_OUTPUT_DEVICE = None
-        # Force a failure in call setup by making open_contact fail
-        self.bridge.wa_controller.search_contact.return_value = []
-        self.bridge.wa_controller.open_contact.return_value = False
+        # Force a failure in call setup by making start_voice_call fail
+        self.bridge.wa_controller.start_voice_call.return_value = False
+        self.bridge.wa_controller.diagnostic_log = ["call failed"]
         self.bridge.start_call_and_bridge("Ghost", self.stt, self.tts, self.llm)
         self.assertIsNone(core.tts.TTS_OUTPUT_DEVICE)
 

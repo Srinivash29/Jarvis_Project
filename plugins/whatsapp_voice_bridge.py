@@ -117,25 +117,13 @@ class WhatsAppVoiceBridge:
             self.state = CallState.ERROR
             return "Error: WhatsApp Desktop is not running or could not be focused."
         
-        matches = self.wa_controller.search_contact(contact_name)
-        
-        if len(matches) > 1:
-            self.state = CallState.ERROR
-            return f"Multiple contacts found for '{contact_name}': {matches}"
-        elif len(matches) == 0 and len(self.wa_controller.diagnostic_log) > 0 and "UIA blind" not in self.wa_controller.diagnostic_log[-1]:
-            self.state = CallState.ERROR
-            return f"Contact '{contact_name}' not found."
-            
-        success_open = self.wa_controller.open_contact(contact_name, matches)
-        if not success_open:
+        # Use the controller's unified call workflow which handles:
+        # search → open contact → find call button → trigger → verify
+        success_call = self.wa_controller.start_voice_call(contact_name)
+        if not success_call or success_call is False:
             self.state = CallState.ERROR
             log_output = "\n".join(self.wa_controller.diagnostic_log)
-            return f"Failed to open chat for {contact_name}.\nLogs:\n{log_output}"
-            
-        success_call = self.wa_controller.start_voice_call(contact_name)
-        if not success_call or "Failed" in success_call:
-            self.state = CallState.ERROR
-            return f"Failed to start voice call for {contact_name}."
+            return f"Failed to start voice call for {contact_name}.\nLogs:\n{log_output}"
             
         if success_call == "SUCCESS_VERIFIED":
             self.state = CallState.CONNECTING

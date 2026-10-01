@@ -1646,7 +1646,7 @@ class RemoteKeyOverlay(QWidget):
             w.setWordWrap(True)
             return w
 
-        lay.addWidget(_lbl("◈  REMOTE ACCESS", 12, True))
+        lay.addWidget(_lbl("◈  PHONE CONNECTION", 12, True))
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color: {C.BORDER}; margin: 1px 0;")
         lay.addWidget(sep)
@@ -1666,16 +1666,17 @@ class RemoteKeyOverlay(QWidget):
 
         self._update_qr(auto_login_url)
 
-        lay.addWidget(_lbl("Scan with phone camera to connect instantly", 8, color=C.TEXT_DIM))
+        lay.addWidget(_lbl("Scan with phone camera to connect instantly (Local Wi-Fi)", 8, color=C.TEXT_DIM))
 
         sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.HLine)
         sep2.setStyleSheet(f"color: {C.BORDER}; margin: 1px 0;")
         lay.addWidget(sep2)
 
-        lay.addWidget(_lbl("Or enter manually:", 7, color=C.TEXT_DIM,
+        lay.addWidget(_lbl("Or open browser on phone:", 7, color=C.TEXT_DIM,
                            align=Qt.AlignmentFlag.AlignLeft))
 
-        self._url_lbl = QLabel(self._manual_url)
+        _disp_url = self._manual_url if self._manual_url.startswith("http") else f"http://{self._manual_url}"
+        self._url_lbl = QLabel(_disp_url)
         self._url_lbl.setFont(QFont("Courier New", 8))
         self._url_lbl.setStyleSheet(f"color: {C.PRI_DIM}; background: transparent;")
         self._url_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1846,6 +1847,7 @@ class MainWindow(QMainWindow):
     _cam_stream_sig = pyqtSignal(bool)       # True=start live stream, False=stop
     _cam_frame_sig  = pyqtSignal(bytes)      # live camera frame → HUD area
     _clipboard_sig  = pyqtSignal(str)        # clipboard text changed (thread-safe)
+    _remote_sig     = pyqtSignal()           # trigger remote phone QR overlay from any thread
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -1988,6 +1990,7 @@ class MainWindow(QMainWindow):
         self._cam_stream_sig.connect(self._on_cam_stream)
         self._cam_frame_sig.connect(self._on_cam_frame)
         self._clipboard_sig.connect(self._show_clipboard_panel)
+        self._remote_sig.connect(self._open_remote)
         self._cam_stop = threading.Event()
 
         # Camera preview overlay (child of central widget, positioned in resizeEvent)
@@ -2557,6 +2560,39 @@ class MainWindow(QMainWindow):
         self._drawer_btn.setCheckable(True)
         self._drawer_btn.clicked.connect(self._toggle_drawer)
         lay.addWidget(self._drawer_btn)
+
+        lay.addSpacing(10)
+        self._phone_btn = QPushButton("📱 CONNECT PHONE")
+        self._phone_btn.setFixedHeight(28)
+        self._phone_btn.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        self._phone_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._phone_btn.setToolTip("Connect your phone via QR code or local Wi-Fi")
+        self._phone_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(0, 212, 255, 0.08);
+                color: {C.PRI};
+                border: 1px solid {C.PRI_DIM};
+                border-radius: 4px;
+                padding: 0 10px;
+                letter-spacing: 1px;
+            }}
+            QPushButton:hover {{
+                background: rgba(0, 212, 255, 0.22);
+                border-color: {C.PRI};
+                color: #ffffff;
+            }}
+            QPushButton:pressed {{
+                background: rgba(0, 212, 255, 0.35);
+            }}
+        """)
+        self._phone_btn.clicked.connect(self._open_remote)
+        lay.addWidget(self._phone_btn)
+
+        self._phone_status_badge = QLabel("")
+        self._phone_status_badge.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        self._phone_status_badge.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent; padding: 2px 4px;")
+        lay.addWidget(self._phone_status_badge)
+
         lay.addStretch()
 
         mid = QVBoxLayout(); mid.setSpacing(1)
@@ -2784,6 +2820,14 @@ class MainWindow(QMainWindow):
         remote_btn.clicked.connect(self._open_remote)
         lay.addWidget(remote_btn)
 
+        wa_btn = QPushButton("📞  CALL ON WHATSAPP")
+        wa_btn.setFixedHeight(28)
+        wa_btn.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        wa_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        wa_btn.setStyleSheet(_BTN_STYLE_PRI)
+        wa_btn.clicked.connect(self._prompt_whatsapp_call)
+        lay.addWidget(wa_btn)
+
         fs_btn = QPushButton("⛶  FULLSCREEN  [F11]")
         fs_btn.setFixedHeight(26)
         fs_btn.setFont(QFont("Courier New", 7))
@@ -2840,6 +2884,15 @@ class MainWindow(QMainWindow):
             self._quick_drawer.raise_()
         else:
             self._quick_drawer.hide()
+
+    def _prompt_whatsapp_call(self):
+        from PyQt6.QtWidgets import QInputDialog
+        contact, ok = QInputDialog.getText(self, "WhatsApp Call", "Enter contact name to call on WhatsApp:")
+        if ok and contact.strip():
+            cmd = f"Call {contact.strip()} on WhatsApp"
+            self.write_log(f"USR: {cmd}")
+            if self.on_text_command:
+                self.on_text_command(cmd)
 
     def _position_quick_drawer(self):
         if not hasattr(self, '_quick_drawer'):
@@ -3021,6 +3074,18 @@ class MainWindow(QMainWindow):
     def notify_phone_connected(self) -> None:
         if self._remote_overlay and self._remote_overlay.isVisible():
             self._remote_overlay.mark_connected()
+        if hasattr(self, '_phone_status_badge'):
+            self._phone_status_badge.setText("● PHONE LINKED")
+            self._phone_status_badge.setStyleSheet(
+                "color: #00ff88; font-weight: bold; background: rgba(0, 255, 136, 0.12); "
+                "border: 1px solid rgba(0, 255, 136, 0.35); border-radius: 4px; padding: 2px 6px;"
+            )
+        if hasattr(self, '_phone_btn'):
+            self._phone_btn.setText("📱 PHONE LINKED")
+            self._phone_btn.setStyleSheet(
+                "background: rgba(0, 255, 136, 0.12); color: #00ff88; "
+                "border: 1px solid #00ff88; border-radius: 4px; padding: 0 10px;"
+            )
 
     def _open_remote(self):
         if not self.on_remote_clicked:
@@ -3437,6 +3502,9 @@ class JarvisUI:
 
     def notify_phone_connected(self) -> None:
         self._win.notify_phone_connected()
+
+    def open_remote(self) -> None:
+        self._win._remote_sig.emit()
 
     def set_state(self, state: str):
         self._win._state_sig.emit(state)

@@ -121,6 +121,25 @@
     #mic-btn.unsupported { opacity: 0.3; cursor: not-allowed; }
     @keyframes mic-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.65;transform:scale(0.97)} }
 
+    /* ── QUICK ACTION BAR ── */
+    .quick-bar {
+      display: flex; gap: 6px; padding: 7px 12px;
+      background: rgba(11, 15, 25, 0.95);
+      border-top: 1px solid var(--border);
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
+      flex-shrink: 0;
+    }
+    .quick-bar::-webkit-scrollbar { display: none; }
+    .qb-btn {
+      background: var(--surface); color: var(--muted);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 6px 11px; font-size: 11px; font-weight: 600;
+      white-space: nowrap; cursor: pointer; transition: all 0.15s;
+    }
+    .qb-btn:hover, .qb-btn:active {
+      color: var(--accent); border-color: var(--accent); background: rgba(99,102,241,0.12);
+    }
+
     /* ── TOAST ── */
     #toast {
       position:fixed; top:66px; left:50%; transform:translateX(-50%) translateY(-8px);
@@ -143,6 +162,17 @@
     <div class="url">__IP__:__PORT__</div>
   </header>
   <main id="feed"></main>
+  <div class="quick-bar">
+    <button class="qb-btn" onclick="promptWhatsAppCall()">📞 Call WA</button>
+    <button class="qb-btn" onclick="sendQuick('end WhatsApp call')">⏹️ End WA</button>
+    <button class="qb-btn" onclick="sendQuick('what is the system status?')">📊 Stats</button>
+    <button class="qb-btn" onclick="sendQuick('take a screenshot of the screen')">📸 Screen</button>
+    <button class="qb-btn" onclick="sendQuick('increase volume by 15')">🔊 Vol +</button>
+    <button class="qb-btn" onclick="sendQuick('decrease volume by 15')">🔉 Vol -</button>
+    <button class="qb-btn" onclick="sendQuick('mute system sound')">🔇 Mute</button>
+    <button class="qb-btn" onclick="sendQuick('play pause media')">⏯️ Play/Pause</button>
+    <button class="qb-btn" onclick="sendQuick('lock the computer')">🔒 Lock PC</button>
+  </div>
   <footer>
     <input id="inp" placeholder="Send a command to JARVIS…" autocomplete="off">
     <label class="btn-attach" for="file-inp" title="Send file">📎</label>
@@ -434,32 +464,41 @@
       return out.buffer;
     }
 
+    function sendQuick(cmd) {
+      const inp = document.getElementById('inp');
+      inp.value = cmd;
+      doSend();
+    }
+
+    function promptWhatsAppCall() {
+      const contact = prompt("Enter contact name to call on WhatsApp:");
+      if (contact && contact.trim()) {
+        sendQuick(`Call ${contact.trim()} on WhatsApp`);
+      }
+    }
+
     function _showVoiceSetup() {
       if (document.getElementById('voice-setup')) return; // show once
-      const origin = location.origin;
+      const ip = '__IP__';
+      const httpsPort = '__HTTPS_PORT__';
+      const httpsUrl = `https://${ip}:${httpsPort}`;
       const card = document.createElement('div');
       card.id = 'voice-setup';
       card.style.cssText = [
         'align-self:stretch', 'background:rgba(99,102,241,0.07)',
         'border:1px solid rgba(99,102,241,0.22)', 'border-radius:14px',
-        'padding:16px 18px', 'font-size:13px', 'line-height:1.8',
+        'padding:16px 18px', 'font-size:13px', 'line-height:1.7',
         'animation:pop 0.18s ease'
       ].join(';');
       card.innerHTML =
-        '<div style="font-weight:700;color:#818cf8;letter-spacing:.5px;margin-bottom:10px">🎤 One-time voice setup</div>' +
-        '<ol style="padding-left:18px;color:#8899aa;margin:0;display:flex;flex-direction:column;gap:4px">' +
-        '<li>Open a new tab → go to <span style="background:rgba(255,255,255,0.07);padding:1px 6px;border-radius:4px;font-family:monospace;font-size:12px">chrome://flags</span></li>' +
-        '<li>Search: <strong style="color:#dde3ed">Insecure origins treated as secure</strong></li>' +
-        '<li>Paste this URL into the box:<br><span id="flags-url" style="background:rgba(255,255,255,0.07);padding:2px 8px;border-radius:4px;font-family:monospace;font-size:11px;user-select:all;cursor:pointer">' + esc(origin) + '</span></li>' +
-        '<li>Set to <strong style="color:#22c55e">Enabled</strong> → tap <strong style="color:#dde3ed">Relaunch</strong></li>' +
-        '<li>Return here and tap 🎤</li>' +
-        '</ol>';
+        '<div style="font-weight:700;color:#818cf8;letter-spacing:.5px;margin-bottom:8px">🎤 Voice Input Options</div>' +
+        '<div style="color:#8899aa;margin-bottom:10px">' +
+        '<strong>Fastest:</strong> Use your phone keyboard’s native dictation/mic key 🎙️ to speak commands.<br><br>' +
+        '<strong>Live Audio Stream:</strong> Browsers require HTTPS to access the microphone directly. ' +
+        '<a href="' + httpsUrl + '" style="color:#00d4ff;text-decoration:underline;font-weight:bold" target="_blank">Tap here to switch to HTTPS (' + httpsUrl + ')</a> ' +
+        '(accept the local self-signed certificate once).</div>';
       feed.appendChild(card);
       feed.scrollTop = feed.scrollHeight;
-      // tap to copy
-      card.querySelector('#flags-url').addEventListener('click', () => {
-        navigator.clipboard?.writeText(origin).then(() => toast('URL copied!')).catch(() => {});
-      });
     }
 
     async function doMic() {

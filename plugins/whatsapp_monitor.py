@@ -386,11 +386,28 @@ def _whatsapp_monitor_loop(player, auto_reply: bool = False):
                             )
 
                             # 4. WhatsApp is automatically closed by _send_whatsapp.
-                            # Fallback check to ensure WhatsApp window is closed:
+                            # Fallback: close WhatsApp window via Win32 WM_CLOSE (no cursor needed).
                             try:
-                                import pyautogui
+                                import ctypes
+                                import psutil
                                 time.sleep(0.3)
-                                pyautogui.hotkey('alt', 'f4')
+                                WM_CLOSE = 0x0010
+                                user32 = ctypes.windll.user32
+                                for proc in psutil.process_iter(["pid", "name"]):
+                                    try:
+                                        if "whatsapp" in (proc.info.get("name") or "").lower():
+                                            hwnd = user32.FindWindowExW(0, 0, None, None)
+                                            # Post WM_CLOSE to all visible WhatsApp top-level windows
+                                            def _close_cb(h, _):
+                                                pid = ctypes.c_ulong()
+                                                user32.GetWindowThreadProcessId(h, ctypes.byref(pid))
+                                                if pid.value == proc.info["pid"] and user32.IsWindowVisible(h):
+                                                    user32.PostMessageW(h, WM_CLOSE, 0, 0)
+                                                return True
+                                            EnumCB = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
+                                            user32.EnumWindows(EnumCB(_close_cb), 0)
+                                    except Exception:
+                                        pass
                             except Exception:
                                 pass
 

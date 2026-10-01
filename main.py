@@ -558,6 +558,41 @@ TOOL_DECLARATIONS = [
             "required": ["category", "key", "value"]
         }
     },
+    {
+        "name": "connect_phone",
+        "description": (
+            "Opens the Phone Connection / Remote Control pairing QR code on screen. "
+            "Call this whenever the user asks to connect to their phone, pair their phone, "
+            "open mobile remote, show QR code, access JARVIS from mobile, or control JARVIS from their phone."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "whatsapp_call",
+        "description": (
+            "Initiates WhatsApp voice or video calls, answers incoming calls, declines calls, "
+            "or hangs up calls on WhatsApp Desktop. Call this whenever the user asks to call someone "
+            "on WhatsApp (e.g. 'call Arun on WhatsApp', 'video call Amma', 'end WhatsApp call', etc.)."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "contact_name": {
+                    "type": "STRING",
+                    "description": "The name of the WhatsApp contact to call."
+                },
+                "intent": {
+                    "type": "STRING",
+                    "description": "voice_call | video_call | end_call | answer_call | reject_call | status (default: voice_call)"
+                }
+            },
+            "required": []
+        }
+    },
 ]
 
 class JarvisLive:
@@ -929,6 +964,37 @@ class JarvisLive:
                     import os as _os
                     _os._exit(0)
                 asyncio.create_task(_do_shutdown())
+
+            elif name == "connect_phone":
+                self.ui.open_remote()
+                if self._dashboard:
+                    url = self._dashboard.get_url()
+                    result = (
+                        f"I have displayed the phone pairing QR code on your screen, Sir. "
+                        f"Scan it with your phone camera, or visit {url} on your phone to connect."
+                    )
+                else:
+                    result = "Opening the phone connection overlay on your screen, Sir."
+
+            elif name in ("whatsapp_call", "whatsapp_desktop_call"):
+                call_args = dict(args)
+                if "call_type" in call_args and "intent" not in call_args:
+                    call_args["intent"] = call_args.pop("call_type")
+                if "contact" in call_args and "contact_name" not in call_args:
+                    call_args["contact_name"] = call_args.pop("contact")
+                if not call_args.get("intent"):
+                    call_args["intent"] = "voice_call"
+
+                r = await loop.run_in_executor(
+                    None,
+                    lambda: self._plugin_registry.run(
+                        "whatsapp_desktop_call",
+                        call_args,
+                        player=self.ui,
+                        session_memory=None,
+                    )
+                )
+                result = r or "Done."
 
             else:
                 if self._plugin_registry.has(name):
@@ -1484,6 +1550,18 @@ class JarvisLive:
         except Exception as e:
             print(f"[Dashboard] Disabled: {e}")
             self._dashboard = None
+
+        # Start optional Telegram Bot remote phone bridge
+        try:
+            from core.telegram_bot import TelegramBotBridge
+            q = self._dashboard._command_queue if self._dashboard else asyncio.Queue()
+            self._telegram_bot = TelegramBotBridge(q, logger=self.ui.write_log)
+            if self._telegram_bot.is_configured():
+                asyncio.create_task(self._telegram_bot.start())
+                self.ui.write_log("SYS: Telegram phone bridge active.")
+        except Exception as e:
+            print(f"[Telegram] Disabled: {e}")
+            self._telegram_bot = None
 
         while True:
             try:

@@ -480,6 +480,7 @@ class DashboardServer:
         self._pending_keys = {k: v for k, v in self._pending_keys.items() if v > now}
         key = ''.join(secrets.choice(_KEY_CHARS) for _ in range(6))
         self._pending_keys[key] = now + expiry_secs
+        self._latest_key = key
         return key
 
     @staticmethod
@@ -488,14 +489,18 @@ class DashboardServer:
         return (certs / "jarvis.key").exists() and (certs / "jarvis.crt").exists()
 
     def get_url(self) -> str:
-        proto = "https" if self._ssl_enabled() else "http"
-        return f"{proto}://{self._ip}:{PORT}"
+        """Primary URL for instant phone browser connection (plain HTTP on port 8000, zero SSL warnings)."""
+        return f"http://{self._ip}:{PORT}"
 
     def get_manual_url(self) -> str:
-        """URL for manual browser entry. When HTTPS active, points to alias port (also HTTPS)."""
-        if self._ssl_enabled():
-            return f"{self._ip}:{PORT + 1}"
+        """URL for manual browser entry."""
         return f"{self._ip}:{PORT}"
+
+    def get_https_url(self) -> str:
+        """HTTPS URL on port 8001 for microphone streaming."""
+        if self._ssl_enabled():
+            return f"https://{self._ip}:{PORT + 1}"
+        return f"http://{self._ip}:{PORT}"
 
     def _aes_key(self, session_key: str) -> bytes:
         if session_key not in self._aes_cache:
@@ -562,7 +567,8 @@ class DashboardServer:
             # don't send custom headers (location.href doesn't carry Authorization).
             html = (self._app_html
                     .replace("__IP__", self._ip)
-                    .replace("__PORT__", str(PORT)))
+                    .replace("__PORT__", str(PORT))
+                    .replace("__HTTPS_PORT__", str(PORT + 1)))
             return HTMLResponse(html)
 
         @app.post("/login")
@@ -840,17 +846,17 @@ class DashboardServer:
     # ── serve ─────────────────────────────────────────────────────────────
 
     async def _serve_alias(self) -> None:
-        """Second HTTPS server on PORT+1 sharing the same app and in-memory state.
-        Chrome HTTPS-upgrades any bare IP:PORT the user types, so this port also needs TLS.
-        User types IP:8001 → Chrome tries https → self-signed cert warning → accept once → done."""
+        """HTTPS server on PORT+1 sharing the same app for microphone audio streaming."""
         ssl_key  = BASE_DIR / "config" / "certs" / "jarvis.key"
         ssl_cert = BASE_DIR / "config" / "certs" / "jarvis.crt"
+        if not (ssl_key.exists() and ssl_cert.exists()):
+            return
         asyncio.get_event_loop().run_in_executor(None, _ensure_network_access, PORT + 1)
         cfg = uvicorn.Config(
             self.app, host="0.0.0.0", port=PORT + 1, log_level="warning",
             ssl_keyfile=str(ssl_key), ssl_certfile=str(ssl_cert),
         )
-        print(f"[Dashboard] Manual entry:  {self._ip}:{PORT + 1}  (type in browser, accept cert once)")
+        print(f"[Dashboard] HTTPS Mic Streaming: https://{self._ip}:{PORT + 1}")
         await uvicorn.Server(cfg).serve()
 
     async def serve(self) -> None:
@@ -859,26 +865,20 @@ class DashboardServer:
             print("[Dashboard] Run:  pip install fastapi 'uvicorn[standard]' cryptography")
             return
 
-        # Firewall setup runs in a thread — uvicorn starts immediately,
-        # no waiting for UAC dialogs or subprocess timeouts.
+        # Firewall setup runs in a thread — uvicorn starts immediately
         asyncio.get_event_loop().run_in_executor(None, _ensure_network_access, PORT)
 
-        # Generate the TLS pair on first run so no private key ships in the repo.
+        # Generate the TLS pair on first run for port 8001
         _ensure_certs()
 
-        use_ssl  = self._ssl_enabled()
-        ssl_key  = BASE_DIR / "config" / "certs" / "jarvis.key"
-        ssl_cert = BASE_DIR / "config" / "certs" / "jarvis.crt"
-
-        if use_ssl:
+        if self._ssl_enabled():
             asyncio.create_task(self._serve_alias())
 
+        # Main server runs plain HTTP on PORT 8000 so phones connect instantly with zero SSL warnings
         cfg = uvicorn.Config(
             self.app, host="0.0.0.0", port=PORT, log_level="warning",
-            **({"ssl_keyfile": str(ssl_key), "ssl_certfile": str(ssl_cert)} if use_ssl else {}),
         )
 
-        proto = "https" if use_ssl else "http"
-        print(f"[Dashboard] {proto}://{self._ip}:{PORT}")
-        print("[Dashboard] Press 'Remote Control' in JARVIS UI to get the QR code.")
+        print(f"[Dashboard] Phone Web App: http://{self._ip}:{PORT}")
+        print("[Dashboard] Click 'CONNECT PHONE' in JARVIS or ask 'Connect to my phone' for QR code.")
         await uvicorn.Server(cfg).serve()
