@@ -41,6 +41,10 @@
     .pill.on { background: var(--gdim); border-color: rgba(34,197,94,0.3); color: var(--green); }
     .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); transition: background 0.3s; }
     .pill.on .dot { background: var(--green); animation: blink 2s infinite; }
+    .pill.standby { background: rgba(255,170,0,0.12); border-color: rgba(255,170,0,0.35); color: var(--accent); }
+    .pill.standby .dot { background: var(--accent); animation: blink 2.5s infinite; }
+    .pill.launching { background: rgba(0,210,255,0.14); border-color: rgba(0,210,255,0.4); color: #00d2ff; }
+    .pill.launching .dot { background: #00d2ff; animation: blink 0.8s infinite; }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
     .spacer { flex: 1; }
     .enc-badge {
@@ -50,6 +54,38 @@
     .enc-badge.on  { display: block; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.25); color: var(--green); }
     .enc-badge.off { display: block; background: rgba(255,100,100,0.08); border: 1px solid rgba(255,100,100,0.2); color: #f87171; }
     .url { font-size: 10px; font-family: monospace; color: var(--muted); padding: 4px 9px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+
+    /* ── STANDBY HERO CARD ── */
+    .standby-card {
+      align-self: stretch;
+      background: linear-gradient(135deg, rgba(255,170,0,0.09), rgba(255,100,0,0.03));
+      border: 1px solid rgba(255,170,0,0.28);
+      border-radius: 14px;
+      padding: 13px 15px;
+      animation: pop 0.2s ease;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+      margin-bottom: 6px;
+    }
+    .sb-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .sb-title { font-size: 11px; font-weight: 800; letter-spacing: 2px; color: var(--accent); display: flex; align-items: center; gap: 6px; }
+    .sb-badge { font-size: 8px; font-weight: 800; letter-spacing: 1px; color: var(--muted); background: var(--surface); padding: 2px 7px; border-radius: 99px; border: 1px solid var(--border); }
+    .sb-desc { font-size: 12px; color: var(--text); opacity: 0.85; margin-bottom: 10px; line-height: 1.45; }
+    .sb-btn {
+      width: 100%;
+      padding: 10px 14px;
+      background: linear-gradient(135deg, #ffaa00, #ff8800);
+      color: #040301;
+      border: none;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(255, 170, 0, 0.3);
+      transition: all 0.15s;
+    }
+    .sb-btn:active { transform: scale(0.97); }
+    .qb-wake { border-color: rgba(255,170,0,0.45) !important; color: var(--accent) !important; background: rgba(255,170,0,0.12) !important; }
 
     /* ── FEED ── */
     main { flex: 1; overflow-y: auto; padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 10px; }
@@ -161,17 +197,27 @@
     <div class="spacer"></div>
     <div class="url">__IP__:__PORT__</div>
   </header>
-  <main id="feed"></main>
+  <main id="feed">
+    <div id="standby-banner" class="standby-card" style="display:none">
+      <div class="sb-header">
+        <div class="sb-title">⚡ JARVIS IN STANDBY MODE</div>
+        <div class="sb-badge">24/7 BACKGROUND LINK</div>
+      </div>
+      <div class="sb-desc">The PC voice engine is offline. Quick PC controls and AI chat are running via the background service.</div>
+      <button class="sb-btn" onclick="doWake()">🚀 WAKE &amp; LAUNCH JARVIS ON PC</button>
+    </div>
+  </main>
   <div class="quick-bar">
-    <button class="qb-btn" onclick="promptWhatsAppCall()">📞 Call WA</button>
-    <button class="qb-btn" onclick="sendQuick('end WhatsApp call')">⏹️ End WA</button>
-    <button class="qb-btn" onclick="sendQuick('what is the system status?')">📊 Stats</button>
-    <button class="qb-btn" onclick="sendQuick('take a screenshot of the screen')">📸 Screen</button>
+    <button class="qb-btn qb-wake" onclick="doWake()">🚀 Wake JARVIS</button>
+    <button class="qb-btn" onclick="sendQuick('what is the system status?')">📊 PC Stats</button>
+    <button class="qb-btn" onclick="sendQuick('lock the computer')">🔒 Lock PC</button>
+    <button class="qb-btn" onclick="sendQuick('sleep display')">💤 Sleep Screen</button>
+    <button class="qb-btn" onclick="sendQuick('take a screenshot of the screen')">📸 Screenshot</button>
     <button class="qb-btn" onclick="sendQuick('increase volume by 15')">🔊 Vol +</button>
     <button class="qb-btn" onclick="sendQuick('decrease volume by 15')">🔉 Vol -</button>
     <button class="qb-btn" onclick="sendQuick('mute system sound')">🔇 Mute</button>
-    <button class="qb-btn" onclick="sendQuick('play pause media')">⏯️ Play/Pause</button>
-    <button class="qb-btn" onclick="sendQuick('lock the computer')">🔒 Lock PC</button>
+    <button class="qb-btn" onclick="promptWhatsAppCall()">📞 Call WA</button>
+    <button class="qb-btn" onclick="sendQuick('end WhatsApp call')">⏹️ End WA</button>
   </div>
   <footer>
     <input id="inp" placeholder="Send a command to JARVIS…" autocomplete="off">
@@ -230,33 +276,77 @@
     if (_encReady) { encBadge.className = 'enc-badge on'; }
     else           { encBadge.className = 'enc-badge off'; encBadge.textContent = 'NO ENC'; }
 
-    // ── WebSocket ─────────────────────────────────────────────────────────────
+    // ── WebSocket with Auto-Reconnect ─────────────────────────────────────────
     const feed  = document.getElementById('feed');
     const pill  = document.getElementById('pill');
     const stTxt = document.getElementById('st');
     const wake  = document.getElementById('wake');
 
-    const _wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const _wsUrl   = `${_wsProto}://${location.host}/ws?token=${encodeURIComponent(_authToken)}`;
-    const ws       = new WebSocket(_wsUrl);
+    let ws = null;
+    let _reconnectTimer = null;
 
-    ws.onopen    = () => { sys('Remote session active.'); toast('Connected to JARVIS'); };
-    ws.onclose   = () => sys('Connection lost — refresh to reconnect.');
-    ws.onerror   = () => sys('Connection error.');
-    ws.onmessage = (e) => {
-      const m = JSON.parse(e.data);
-      if (m.type === 'log')           append(m.speaker, m.text);
-      if (m.type === 'status')        setStatus(m.state);
-      if (m.type === 'wake')          sys('Wake word detected — connecting…');
-      if (m.type === 'sys')           sys(m.text);
-      if (m.type === 'file_received') _onFileReceived(m);
-    };
+    function connectWs() {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      const _wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+      const _wsUrl   = `${_wsProto}://${location.host}/ws?token=${encodeURIComponent(_authToken)}`;
+      ws = new WebSocket(_wsUrl);
+
+      ws.onopen = () => {
+        clearTimeout(_reconnectTimer);
+        sys('Remote session active.');
+        toast('Connected to JARVIS');
+      };
+
+      ws.onclose = () => {
+        setStatus('standby');
+        clearTimeout(_reconnectTimer);
+        _reconnectTimer = setTimeout(connectWs, 2500);
+      };
+
+      ws.onerror = () => {
+        clearTimeout(_reconnectTimer);
+        _reconnectTimer = setTimeout(connectWs, 3500);
+      };
+
+      ws.onmessage = (e) => {
+        try {
+          const m = JSON.parse(e.data);
+          if (m.type === 'log')           append(m.speaker, m.text);
+          if (m.type === 'status')        setStatus(m.state);
+          if (m.type === 'wake')          sys('Wake word detected — connecting…');
+          if (m.type === 'sys')           sys(m.text);
+          if (m.type === 'file_received') _onFileReceived(m);
+        } catch (_) {}
+      };
+    }
+
+    connectWs();
+
+    // Reconnect immediately when user brings browser tab/phone back to foreground
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        if (!ws || ws.readyState > 1) connectWs();
+      }
+    });
 
     function setStatus(s) {
+      const banner = document.getElementById('standby-banner');
       if (s === 'active') {
-        pill.className = 'pill on'; stTxt.textContent = 'Active'; wake.classList.remove('show');
+        pill.className = 'pill on';
+        stTxt.textContent = 'ONLINE';
+        wake.classList.remove('show');
+        if (banner) banner.style.display = 'none';
+      } else if (s === 'launching') {
+        pill.className = 'pill launching';
+        stTxt.textContent = 'LAUNCHING…';
+        wake.classList.remove('show');
+        if (banner) banner.style.display = 'none';
       } else {
-        pill.className = 'pill'; stTxt.textContent = 'Sleeping'; wake.classList.add('show');
+        pill.className = 'pill standby';
+        stTxt.textContent = 'STANDBY';
+        wake.classList.add('show');
+        wake.textContent = '🚀 LAUNCH';
+        if (banner) banner.style.display = 'block';
       }
     }
 
@@ -418,8 +508,11 @@
     }
 
     function doWake() {
-      sys('Sending wake signal…');
+      sys('🚀 Sending wake & launch signal to PC…');
+      toast('🚀 Launching JARVIS on PC');
+      setStatus('launching');
       _authFetch('/api/wake', { method: 'POST' });
+      _authFetch('/api/launch', { method: 'POST' });
     }
 
     document.getElementById('inp').addEventListener('keydown', e => {

@@ -18,10 +18,15 @@ def create_shortcut():
     main_py = project_dir / "main.py"
     icon_path = project_dir / "config" / "jarvis.ico"
 
-    # Select Python executable (.venv preferred if it has packages installed)
-    venv_py = project_dir / ".venv" / "Scripts" / "python.exe"
-    if venv_py.exists():
-        py_exe = str(venv_py)
+    # Select Python executable (prefer pythonw.exe to launch GUI without opening a console window)
+    venv_pyw = project_dir / ".venv" / "Scripts" / "pythonw.exe"
+    sys_pyw = Path(sys.executable).parent / "pythonw.exe"
+    if venv_pyw.exists():
+        py_exe = str(venv_pyw)
+    elif sys_pyw.exists():
+        py_exe = str(sys_pyw)
+    elif (project_dir / ".venv" / "Scripts" / "python.exe").exists():
+        py_exe = str(project_dir / ".venv" / "Scripts" / "python.exe")
     else:
         py_exe = sys.executable
 

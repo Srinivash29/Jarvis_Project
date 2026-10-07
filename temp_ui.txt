@@ -1,0 +1,317 @@
+class HudCanvas:
+  def paintEvent:
+        def paintEvent(self, _):
+            p = QPainter(self)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.fillRect(self.rect(), qcol(C.BG))
+    
+            W, H = float(self.width()), float(self.height())
+            cx, cy = W / 2.0, H / 2.0 - 15.0  # Center of reactor
+            fw = min(W, H)
+            scale = self._scale
+    
+            # Grid telemetry background dots
+            p.setPen(QPen(qcol(C.PRI_GHO, 120), 1))
+            for x in range(0, int(W), 48):
+                for y in range(0, int(H), 48):
+                    p.drawPoint(x, y)
+    
+            # ── 1. AMBIENT GOLDEN STARDUST & PARTICLE NEBULA (3D projected) ──
+            cos_y, sin_y = math.cos(self._rot_y), math.sin(self._rot_y)
+            cos_x, sin_x = math.cos(self._rot_x), math.sin(self._rot_x)
+    
+            for rad_r, phi, theta, spd, sz, phase in self._particles_3d:
+                rad = fw * rad_r
+                x0 = rad * math.cos(phi) * math.cos(theta)
+                y0 = rad * math.sin(phi)
+                z0 = rad * math.cos(phi) * math.sin(theta)
+    
+                x1 = x0 * cos_y + z0 * sin_y
+                z1 = -x0 * sin_y + z0 * cos_y
+                y1 = y0 * cos_x - z1 * sin_x
+                z2 = y0 * sin_x + z1 * cos_x
+    
+                px = cx + x1
+                py = cy + y1
+    
+                depth = (z2 + fw * 0.45) / (fw * 0.9)
+                depth = max(0.0, min(1.0, depth))
+    
+                twinkle = 0.75 + 0.25 * math.sin(self._tick * 0.12 + phase)
+                pt_alpha = int((30 + 220 * (depth ** 1.35)) * twinkle)
+                pt_alpha = max(10, min(255, pt_alpha))
+                pt_sz = sz * (0.6 + 0.6 * depth)
+    
+                if self.muted:
+                    pt_col = QColor(255, int(70 + 40 * depth), int(70 + 40 * depth), pt_alpha // 2)
+                elif depth > 0.6:
+                    pt_col = QColor(255, int(215 + 40 * depth), int(80 + 100 * depth), pt_alpha)
+                else:
+                    pt_col = QColor(255, int(135 + 60 * depth), int(10 + 20 * depth), pt_alpha)
+    
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(pt_col))
+                p.drawEllipse(QPointF(px, py), pt_sz, pt_sz)
+    
+            # ── 2. OUTER CONCENTRIC CYAN DIAL & DEGREE TICK MARKS ──
+            r_dial = fw * 0.435 * scale
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor(0, 210, 255, 90), 1.0))
+            p.drawEllipse(QPointF(cx, cy), r_dial, r_dial)
+    
+            # Precision tick marks around outer dial (72 ticks)
+            for i in range(72):
+                ang = math.radians(i * 5)
+                cos_a, sin_a = math.cos(ang), math.sin(ang)
+                if i % 18 == 0:  # Cardinal 0, 90, 180, 270
+                    t_len = 10.0
+                    t_w = 2.0
+                    t_col = QColor(0, 210, 255, 230)
+                elif i % 6 == 0: # 30 deg marks
+                    t_len = 7.0
+                    t_w = 1.4
+                    t_col = QColor(0, 210, 255, 170)
+                else:
+                    t_len = 4.0
+                    t_w = 0.9
+                    t_col = QColor(0, 210, 255, 80)
+                x1 = cx + (r_dial - t_len) * cos_a
+                y1 = cy + (r_dial - t_len) * sin_a
+                x2 = cx + r_dial * cos_a
+                y2 = cy + r_dial * sin_a
+                p.setPen(QPen(t_col, t_w))
+                p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+    
+            # ── 3. ROTATING SEGMENTED ORBITAL ARCS & AMBER MARKER NODES ──
+            r_arc1 = fw * 0.375 * scale
+            p.save()
+            p.translate(cx, cy)
+            p.rotate(math.degrees(self._arc_rot1))
+            rect_arc1 = QRectF(-r_arc1, -r_arc1, r_arc1 * 2, r_arc1 * 2)
+            if self.muted:
+                p.setPen(QPen(QColor(255, 60, 60, 70), 3.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+                p.drawArc(rect_arc1, int(30 * 16), int(100 * 16))
+                p.drawArc(rect_arc1, int(210 * 16), int(100 * 16))
+            else:
+                p.setPen(QPen(QColor(0, 210, 255, 210), 3.2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+                p.drawArc(rect_arc1, int(25 * 16), int(95 * 16))
+                p.drawArc(rect_arc1, int(205 * 16), int(95 * 16))
+                for b_ang in [math.radians(25), math.radians(120), math.radians(205), math.radians(300)]:
+                    bx = r_arc1 * math.cos(b_ang)
+                    by = r_arc1 * math.sin(b_ang)
+                    p.setPen(Qt.PenStyle.NoPen)
+                    p.setBrush(QBrush(QColor(255, 170, 0, 240)))
+                    p.drawEllipse(QPointF(bx, by), 3.0, 3.0)
+            p.restore()
+    
+            # Counter-rotating inner segmented arcs
+            r_arc2 = fw * 0.315 * scale
+            p.save()
+            p.translate(cx, cy)
+            p.rotate(math.degrees(self._arc_rot2))
+            rect_arc2 = QRectF(-r_arc2, -r_arc2, r_arc2 * 2, r_arc2 * 2)
+            if not self.muted:
+                p.setPen(QPen(QColor(255, 170, 0, 180), 2.2, Qt.PenStyle.DashLine, Qt.PenCapStyle.RoundCap))
+                p.drawArc(rect_arc2, int(60 * 16), int(120 * 16))
+                p.drawArc(rect_arc2, int(240 * 16), int(120 * 16))
+                p.setPen(QPen(QColor(0, 210, 255, 130), 1.2))
+                p.drawEllipse(QRectF(-r_arc2, -r_arc2, r_arc2 * 2, r_arc2 * 2))
+            p.restore()
+    
+            # ── 4. SACRED GEOMETRY STAR & POLYGON LATTICE ──
+            r_poly = fw * 0.23 * scale
+            p.save()
+            p.translate(cx, cy)
+            p.rotate(math.degrees(self._mesh_rot_y * 1.5))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+    
+            p.setPen(QPen(QColor(0, 210, 255, 120), 1.0))
+            p.drawEllipse(QRectF(-r_poly, -r_poly, r_poly * 2, r_poly * 2))
+    
+            p.setPen(QPen(QColor(0, 210, 255, 60), 0.8))
+            for k in range(8):
+                ang = math.radians(k * 45)
+                p.drawLine(QPointF(0, 0), QPointF(r_poly * math.cos(ang), r_poly * math.sin(ang)))
+    
+            num_pts = 12
+            poly_pts = [
+                QPointF(r_poly * math.cos(2 * math.pi * k / num_pts),
+                        r_poly * math.sin(2 * math.pi * k / num_pts))
+                for k in range(num_pts)
+            ]
+            poly_col = QColor(255, 60, 60, 80) if self.muted else QColor(255, 175, 20, 140)
+            p.setPen(QPen(poly_col, 0.9))
+            for i in range(num_pts):
+                p.drawLine(poly_pts[i], poly_pts[(i + 4) % num_pts])
+                p.drawLine(poly_pts[i], poly_pts[(i + 5) % num_pts])
+    
+            if not self.muted:
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(QColor(255, 220, 60, 200)))
+                for pt in poly_pts:
+                    p.drawEllipse(pt, 1.8, 1.8)
+    
+            p.restore()
+    
+            # ── 5. RADIATING ENERGY RAYS (Iconic solar flare shafts) ──
+            if not self.muted:
+                for base_ang, base_len, base_w, is_hero in self._ray_configs:
+                    ang_deg = (base_ang + math.degrees(self._ray_rot)) % 360
+                    rad_ang = math.radians(ang_deg)
+                    r_len = fw * base_len * (scale if self.speaking else 1.0)
+                    x_end = cx + r_len * math.cos(rad_ang)
+                    y_end = cy + r_len * math.sin(rad_ang)
+    
+                    grad = QLinearGradient(cx, cy, x_end, y_end)
+                    grad.setColorAt(0.0, QColor(255, 255, 220, 255))
+                    grad.setColorAt(0.12, QColor(255, 215, 60, 240))
+                    grad.setColorAt(0.40, QColor(255, 140, 20, 150))
+                    grad.setColorAt(0.80, QColor(255, 90, 0, 40))
+                    grad.setColorAt(1.0, QColor(200, 50, 0, 0))
+    
+                    if is_hero:
+                        p.setPen(QPen(QColor(255, 190, 40, 50), base_w * 2.0))
+                        p.drawLine(QPointF(cx, cy), QPointF(x_end, y_end))
+    
+                    p.setPen(QPen(QBrush(grad), base_w))
+                    p.drawLine(QPointF(cx, cy), QPointF(x_end, y_end))
+    
+            # ── 6. THE RADIANT CENTRAL ARC REACTOR SUN (Multi-layer solar bloom) ──
+            outer_glow_r = fw * 0.165 * scale
+            rad_out = QRadialGradient(cx, cy, outer_glow_r)
+            if self.muted:
+                rad_out.setColorAt(0.0, QColor(200, 40, 40, 120))
+                rad_out.setColorAt(0.5, QColor(140, 20, 20, 50))
+                rad_out.setColorAt(1.0, QColor(0, 0, 0, 0))
+            else:
+                rad_out.setColorAt(0.0, QColor(255, 180, 30, 170))
+                rad_out.setColorAt(0.30, QColor(255, 130, 10, 95))
+                rad_out.setColorAt(0.65, QColor(220, 65, 0, 30))
+                rad_out.setColorAt(1.0, QColor(0, 0, 0, 0))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(rad_out))
+            p.drawEllipse(QPointF(cx, cy), outer_glow_r, outer_glow_r)
+    
+            mid_glow_r = fw * 0.082 * scale
+            rad_mid = QRadialGradient(cx, cy, mid_glow_r)
+            if self.muted:
+                rad_mid.setColorAt(0.0, QColor(255, 100, 100, 220))
+                rad_mid.setColorAt(0.4, QColor(200, 40, 40, 150))
+                rad_mid.setColorAt(1.0, QColor(100, 0, 0, 0))
+            else:
+                rad_mid.setColorAt(0.0, QColor(255, 255, 200, 255))
+                rad_mid.setColorAt(0.35, QColor(255, 220, 60, 235))
+                rad_mid.setColorAt(0.70, QColor(255, 140, 15, 130))
+                rad_mid.setColorAt(1.0, QColor(255, 70, 0, 0))
+            p.setBrush(QBrush(rad_mid))
+            p.drawEllipse(QPointF(cx, cy), mid_glow_r, mid_glow_r)
+    
+            core_r = fw * 0.040 * scale
+            rad_core = QRadialGradient(cx, cy, core_r)
+            if self.muted:
+                rad_core.setColorAt(0.0, QColor(255, 200, 200, 255))
+                rad_core.setColorAt(0.6, QColor(255, 80, 80, 255))
+                rad_core.setColorAt(1.0, QColor(180, 20, 20, 200))
+            else:
+                rad_core.setColorAt(0.0, QColor(255, 255, 255, 255))
+                rad_core.setColorAt(0.45, QColor(255, 255, 180, 255))
+                rad_core.setColorAt(0.75, QColor(255, 225, 40, 255))
+                rad_core.setColorAt(1.0, QColor(255, 155, 0, 210))
+            p.setBrush(QBrush(rad_core))
+            p.drawEllipse(QPointF(cx, cy), core_r, core_r)
+    
+            # ── 7. CORNER TELEMETRY BRACKETS ──
+            bl = 22
+            bc = QColor(0, 210, 255, 130 if not self.muted else 60)
+            p.setPen(QPen(bc, 1.8))
+            m = 16
+            p.drawLine(QPointF(m, m), QPointF(m + bl, m))
+            p.drawLine(QPointF(m, m), QPointF(m, m + bl))
+            p.drawLine(QPointF(W - m, m), QPointF(W - m - bl, m))
+            p.drawLine(QPointF(W - m, m), QPointF(W - m, m + bl))
+            p.drawLine(QPointF(m, H - m), QPointF(m + bl, H - m))
+            p.drawLine(QPointF(m, H - m), QPointF(m, H - m - bl))
+            p.drawLine(QPointF(W - m, H - m), QPointF(W - m - bl, H - m))
+            p.drawLine(QPointF(W - m, H - m), QPointF(W - m, H - m - bl))
+    
+            # ── 8. BOTTOM GOLDEN BANNER WINGS & QUOTE ──
+            bot_y = min(H - 24, cy + fw * 0.44)
+            banner_text = f'“  {self._assistant_name}  IS  ONLINE  ”'
+            if self.muted:
+                banner_text = f'“  {self._assistant_name}  MUTED  ”'
+                banner_col = QColor(255, 68, 85)
+            elif self.speaking:
+                banner_text = f'“  {self._assistant_name}  SPEAKING  ”'
+                banner_col = QColor(255, 170, 0)
+            elif self.state in ("THINKING", "PROCESSING"):
+                banner_text = f'“  PROCESSING  DATA  ”'
+                banner_col = QColor(0, 210, 255)
+            else:
+                banner_col = QColor(255, 170, 0)
+    
+            p.setPen(QPen(QColor(255, 170, 0, 180) if not self.muted else QColor(255, 68, 85, 180), 1.4))
+            wing_w = 55.0
+            gap_w = 110.0
+            p.drawLine(QPointF(cx - gap_w - wing_w, bot_y), QPointF(cx - gap_w, bot_y))
+            p.drawLine(QPointF(cx - gap_w - wing_w, bot_y), QPointF(cx - gap_w - wing_w - 6, bot_y + 6))
+            p.drawLine(QPointF(cx + gap_w, bot_y), QPointF(cx + gap_w + wing_w, bot_y))
+            p.drawLine(QPointF(cx + gap_w + wing_w, bot_y), QPointF(cx + gap_w + wing_w + 6, bot_y + 6))
+    
+            p.setFont(QFont("Courier New", 10, QFont.Weight.Bold))
+            p.setPen(QPen(banner_col, 1))
+            p.drawText(QRectF(cx - 160, bot_y - 10, 320, 22), Qt.AlignmentFlag.AlignCenter, banner_text)
+class MetricBar:
+  def paintEvent:
+        def paintEvent(self, _):
+            p = QPainter(self)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            W, H = float(self.width()), float(self.height())
+    
+            # Card glass background
+            p.setBrush(QBrush(QColor(6, 17, 34, 220)))
+            p.setPen(QPen(QColor(0, 210, 255, 55), 1.0))
+            p.drawRoundedRect(QRectF(1, 1, W - 2, H - 2), 6, 6)
+    
+            # Left subtle cyan accent notch
+            p.setPen(QPen(QColor(0, 210, 255, 180), 2.0))
+            p.drawLine(QPointF(2, 8), QPointF(2, H - 8))
+    
+            # Icon box
+            p.setFont(QFont("Segoe UI Emoji" if _OS == "Windows" else "Arial", 12))
+            p.setPen(QPen(qcol(self._color), 1))
+            p.drawText(QRectF(6, 6, 26, 20), Qt.AlignmentFlag.AlignCenter, self._icon)
+    
+            # Label
+            p.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+            p.setPen(QPen(QColor(224, 242, 254), 1))
+            p.drawText(QRectF(34, 7, 85, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self._label)
+    
+            # Percentage / Value text
+            p.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
+            val_col = qcol(self._color) if self._text not in ("N/A", "--") else QColor(100, 116, 139)
+            p.setPen(QPen(val_col, 1))
+            p.drawText(QRectF(W - 75, 7, 68, 18), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, self._text)
+    
+            # Progress bar
+            bar_h = 4.0
+            bar_y = H - bar_h - 7
+            bar_x = 34
+            bar_w = W - bar_x - 10
+    
+            # Background track
+            p.setBrush(QBrush(QColor(10, 24, 46)))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawRoundedRect(QRectF(bar_x, bar_y, bar_w, bar_h), 2.0, 2.0)
+    
+            # Active fill
+            if self._value > 0:
+                fill_w = max(4.0, bar_w * (self._value / 100.0))
+                fill_grad = QLinearGradient(bar_x, bar_y, bar_x + fill_w, bar_y)
+                if self._color == C.ACC2 or "RAM" in self._label:
+                    fill_grad.setColorAt(0.0, QColor(255, 150, 0))
+                    fill_grad.setColorAt(1.0, QColor(255, 205, 40))
+                else:
+                    fill_grad.setColorAt(0.0, QColor(0, 180, 255))
+                    fill_grad.setColorAt(1.0, QColor(0, 240, 255))
+                p.setBrush(QBrush(fill_grad))
+                p.drawRoundedRect(QRectF(bar_x, bar_y, fill_w, bar_h), 2.0, 2.0)

@@ -11,12 +11,19 @@ Install deps:  pip install fastapi "uvicorn[standard]" cryptography
 import asyncio
 import base64
 import hashlib
+import json
 import re
 import secrets
 import socket
 import string
+import subprocess
+import sys
 import time
 from pathlib import Path
+try:
+    import psutil
+except ImportError:
+    psutil = None
 
 _DEPS_OK = False
 try:
@@ -455,7 +462,8 @@ def _read(name: str) -> str:
 
 class DashboardServer:
 
-    def __init__(self):
+    def __init__(self, is_daemon: bool = False):
+        self.is_daemon                    = is_daemon
         self._ip                          = _local_ip()
         self._tokens: set[str]            = set()
         self._token_keys: dict[str, str]  = {}   # auth_token → session_key
@@ -467,11 +475,180 @@ class DashboardServer:
         self._connect_callback            = None
         self._pending_keys: dict[str, float] = {}
         self._device_sessions: dict[str, dict] = {}  # device_token → {session_key}
-        self._phone_audio_queue: asyncio.Queue    = asyncio.Queue(maxsize=200)
+        self._phone_audio_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
+        self._agent_ws: WebSocket | None  = None
+        self._jarvis_active: bool         = False
         self._uploads_dir                 = UPLOADS_DIR
         self._login_html                  = _read("login.html")
         self._app_html                    = _read("app.html")
         self.app                          = self._build_app()
+
+    def launch_jarvis(self) -> bool:
+        """Launch main.py in interactive desktop session if not already running."""
+        try:
+            if psutil:
+                for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                    try:
+                        cmdline = proc.info.get('cmdline') or []
+                        if any("main.py" in str(arg) for arg in cmdline):
+                            print("[Dashboard] JARVIS main.py is already running.")
+                            return True
+                    except Exception:
+                        continue
+
+            # Prefer pythonw.exe so JARVIS launches as a clean desktop GUI app without opening a terminal window
+            venv_pyw = BASE_DIR / ".venv" / "Scripts" / "pythonw.exe"
+            sys_pyw = Path(sys.executable).parent / "pythonw.exe"
+            if venv_pyw.exists():
+                py_exe = str(venv_pyw)
+            elif sys_pyw.exists():
+                py_exe = str(sys_pyw)
+            else:
+                venv_py = BASE_DIR / ".venv" / "Scripts" / "python.exe"
+                py_exe = str(venv_py) if venv_py.exists() else sys.executable
+
+            main_py = BASE_DIR / "main.py"
+            creation_flags = 0
+            if sys.platform == "win32":
+                creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
+            subprocess.Popen(
+                [py_exe, str(main_py)],
+                cwd=str(BASE_DIR),
+                creationflags=creation_flags
+            )
+            print(f"[Dashboard] Launched {main_py}")
+            return True
+        except Exception as e:
+            print(f"[Dashboard] Failed to launch JARVIS: {e}")
+            return False
+
+    def get_stats_summary(self) -> str:
+        """Return formatted PC telemetry for mobile display."""
+        try:
+            if not psutil:
+                return "[Standby] psutil not installed — hardware telemetry unavailable."
+            cpu = psutil.cpu_percent(interval=None)
+            mem = psutil.virtual_memory()
+            disk_path = 'C:\\' if sys.platform == 'win32' else '/'
+            disk = psutil.disk_usage(disk_path).percent
+            bat = psutil.sensors_battery()
+            battery_str = "Desktop (AC)"
+            if bat:
+                plugged = "⚡ Charging" if bat.power_plugged else "🔋 Discharging"
+                battery_str = f"{bat.percent}% ({plugged})"
+            return (
+                f"[Standby] PC Stats — CPU: {cpu}%, RAM: {mem.percent}% "
+                f"({round(mem.used/(1024**3), 1)}/{round(mem.total/(1024**3), 1)}GB), "
+                f"Disk: {disk}%, Power: {battery_str}"
+            )
+        except Exception as e:
+            return f"[Standby] PC Stats error: {e}"
+
+    async def _execute_offline_command(self, text: str) -> None:
+        """Execute PC actions and AI queries when JARVIS main.py is closed."""
+        t = text.strip()
+        tl = t.lower()
+
+        # Check launch / wake commands
+        if any(w in tl for w in ["launch jarvis", "start jarvis", "open jarvis", "run jarvis", "wake jarvis", "wake up"]):
+            self.launch_jarvis()
+            await self.broadcast({"type": "sys", "text": "🚀 Launching JARVIS on PC..."})
+            await self.broadcast({
+                "type": "log",
+                "speaker": "jarvis",
+                "text": "Initiating startup sequence, Sir. Launching desktop interface."
+            })
+            return
+
+        # Check quick system controls
+        if any(w in tl for w in ["system status", "pc stats", "what is the system status", "battery status", "stats"]):
+            stat_msg = self.get_stats_summary()
+            await self.broadcast({"type": "log", "speaker": "jarvis", "text": stat_msg})
+            return
+
+        if "lock" in tl and ("pc" in tl or "computer" in tl or "screen" in tl or tl == "lock"):
+            try:
+                from actions.computer_settings import lock_screen
+                lock_screen()
+                await self.broadcast({"type": "log", "speaker": "jarvis", "text": "Workstation locked, Sir."})
+            except Exception as e:
+                await self.broadcast({"type": "log", "speaker": "jarvis", "text": f"Lock command failed: {e}"})
+            return
+
+        if any(w in tl for w in ["sleep display", "screen off", "turn off screen", "sleep monitor", "sleep screen"]):
+            try:
+                from actions.computer_settings import sleep_display
+                sleep_display()
+                await self.broadcast({"type": "log", "speaker": "jarvis", "text": "Display put to sleep, Sir."})
+            except Exception as e:
+                await self.broadcast({"type": "log", "speaker": "jarvis", "text": f"Sleep command failed: {e}"})
+            return
+
+        if any(w in tl for w in ["volume up", "increase volume", "vol+"]):
+            try:
+                from actions.computer_settings import volume_up
+                volume_up()
+                await self.broadcast({"type": "log", "speaker": "jarvis", "text": "Master volume increased."})
+            except Exception as e:
+                await self.broadcast({"type": "log", "speaker": "jarvis", "text": f"Volume failed: {e}"})
+            return
+
+        if any(w in tl for w in ["volume down", "decrease volume", "vol-"]):
+            try:
+                from actions.computer_settings import volume_down
+                volume_down()
+                await self.broadcast({"type": "log", "speaker": "jarvis", "text": "Master volume decreased."})
+            except Exception as e:
+                await self.broadcast({"type": "log", "speaker": "jarvis", "text": f"Volume failed: {e}"})
+            return
+
+        if any(w in tl for w in ["mute", "unmute", "toggle mute"]):
+            try:
+                from actions.computer_settings import volume_mute
+                volume_mute()
+                await self.broadcast({"type": "log", "speaker": "jarvis", "text": "Audio mute toggled."})
+            except Exception as e:
+                await self.broadcast({"type": "log", "speaker": "jarvis", "text": f"Mute failed: {e}"})
+            return
+
+        if any(w in tl for w in ["screenshot", "screen shot", "take a screenshot"]):
+            try:
+                from actions.computer_settings import take_screenshot
+                take_screenshot()
+                await self.broadcast({"type": "log", "speaker": "jarvis", "text": "Screen capture triggered on PC."})
+            except Exception as e:
+                await self.broadcast({"type": "log", "speaker": "jarvis", "text": f"Screenshot failed: {e}"})
+            return
+
+        # Standby AI response using Gemini 3.8 Flash
+        api_key = _get_gemini_key()
+        if api_key:
+            try:
+                from google import genai
+                client = genai.Client(api_key=api_key)
+                prompt = (
+                    "You are JARVIS, Tony Stark's AI assistant created for Srinivash. "
+                    "You are currently in Standby Mode responding on the user's mobile phone while "
+                    "the primary desktop voice interface is offline. "
+                    "Be sharp, concise, loyal, and helpful. "
+                    f"User message: {t}"
+                )
+                loop = asyncio.get_event_loop()
+                resp = await loop.run_in_executor(
+                    None,
+                    lambda: client.models.generate_content(model="gemini-3.8-flash", contents=prompt)
+                )
+                reply = resp.text.strip()
+                await self.broadcast({"type": "log", "speaker": "jarvis", "text": f"[Standby] {reply}"})
+                return
+            except Exception as exc:
+                print(f"[Dashboard] Standby AI error: {exc}")
+
+        await self.broadcast({
+            "type": "log",
+            "speaker": "jarvis",
+            "text": "[Standby] Command received, Sir. Tap 'LAUNCH JARVIS' on your phone to wake full desktop capabilities."
+        })
 
     # ── one-time key management ───────────────────────────────────────────
 
@@ -670,6 +847,61 @@ class DashboardServer:
             self._device_sessions.clear()
             return JSONResponse({"ok": True, "revoked": count})
 
+        @app.get("/api/daemon-status")
+        async def daemon_status():
+            return JSONResponse({
+                "ok": True,
+                "status": "online",
+                "jarvis_active": self._jarvis_active,
+                "ip": self._ip,
+                "port": PORT,
+                "latest_key": getattr(self, "_latest_key", None),
+            })
+
+        @app.post("/api/new-key")
+        async def new_key_ep(req: Request):
+            body = {}
+            try:
+                body = await req.json()
+            except Exception:
+                pass
+            exp = int(body.get("expiry_secs", 600))
+            key = self.new_key(expiry_secs=exp)
+            return JSONResponse({
+                "ok": True,
+                "key": key,
+                "url": self.get_url(),
+                "manual": self.get_manual_url(),
+                "auto_login": f"{self.get_url()}/auto-login?key={key}",
+            })
+
+        @app.get("/api/system-status")
+        async def system_status_ep(req: Request):
+            try:
+                cpu = psutil.cpu_percent(interval=None) if psutil else 0
+                mem = psutil.virtual_memory() if psutil else None
+                bat = psutil.sensors_battery() if psutil else None
+                battery_info = {"percent": bat.percent, "plugged": bat.power_plugged} if bat else None
+                return JSONResponse({
+                    "ok": True,
+                    "cpu_percent": cpu,
+                    "ram_percent": mem.percent if mem else 0,
+                    "ram_used_gb": round(mem.used / (1024**3), 1) if mem else 0,
+                    "ram_total_gb": round(mem.total / (1024**3), 1) if mem else 0,
+                    "battery": battery_info,
+                    "jarvis_active": self._jarvis_active,
+                })
+            except Exception as e:
+                return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+        @app.post("/api/launch")
+        async def launch_ep(req: Request):
+            ok = self.launch_jarvis()
+            if ok:
+                asyncio.create_task(self.broadcast({"type": "sys", "text": "🚀 Launching JARVIS on PC..."}))
+                asyncio.create_task(self.broadcast({"type": "status", "state": "launching"}))
+            return JSONResponse({"ok": ok})
+
         @app.post("/api/command")
         async def command(req: Request):
             if not _auth(req):
@@ -684,18 +916,69 @@ class DashboardServer:
             else:
                 text = (body.get("text") or "").strip()
             if text:
-                await self._command_queue.put(text)
-                if self._wake_callback:
-                    self._wake_callback()
+                if self._agent_ws:
+                    try:
+                        await self._agent_ws.send_json({"type": "command", "text": text})
+                    except Exception:
+                        self._agent_ws = None
+                        self._jarvis_active = False
+                        asyncio.create_task(self._execute_offline_command(text))
+                else:
+                    await self._command_queue.put(text)
+                    if self._wake_callback:
+                        self._wake_callback()
+                    asyncio.create_task(self._execute_offline_command(text))
             return JSONResponse({"ok": True})
 
         @app.post("/api/wake")
         async def wake_ep(req: Request):
             if not _auth(req):
                 return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            if self._agent_ws:
+                try:
+                    await self._agent_ws.send_json({"type": "wake"})
+                except Exception:
+                    pass
             if self._wake_callback:
                 self._wake_callback()
+            if not self._jarvis_active:
+                self.launch_jarvis()
+                asyncio.create_task(self.broadcast({"type": "sys", "text": "🚀 Launching JARVIS on PC..."}))
+                asyncio.create_task(self.broadcast({"type": "status", "state": "launching"}))
             return JSONResponse({"ok": True})
+
+        # ── Desktop Agent WebSocket (main.py IPC bridge) ─────────────────────
+
+        @app.websocket("/ws/agent")
+        async def agent_ws_ep(websocket: WebSocket):
+            client_host = websocket.client.host if websocket.client else ""
+            if client_host not in ("127.0.0.1", "::1", "localhost"):
+                await websocket.close(code=4003)
+                return
+            await websocket.accept()
+            self._agent_ws = websocket
+            self._jarvis_active = True
+            print("[Dashboard] JARVIS Engine connected to background service.")
+            await self.broadcast({"type": "status", "state": "active"})
+            await self.broadcast({"type": "sys", "text": "● JARVIS Engine connected & online."})
+            try:
+                while True:
+                    msg = await websocket.receive_json()
+                    mtype = msg.get("type")
+                    if mtype == "broadcast":
+                        payload = msg.get("payload", {})
+                        await self.broadcast(payload)
+                    elif mtype == "status":
+                        state = msg.get("state", "active")
+                        await self.broadcast({"type": "status", "state": state})
+            except WebSocketDisconnect:
+                pass
+            finally:
+                self._agent_ws = None
+                self._jarvis_active = False
+                print("[Dashboard] JARVIS Engine disconnected from background service.")
+                await self.broadcast({"type": "status", "state": "standby"})
+                await self.broadcast({"type": "sys", "text": "○ JARVIS Engine disconnected — entering Standby mode."})
 
         # ── Phone mic real-time audio → Gemini Live ──────────────────────────
 
@@ -712,12 +995,19 @@ class DashboardServer:
             try:
                 while True:
                     data = await websocket.receive_bytes()
-                    try:
-                        self._phone_audio_queue.put_nowait(
-                            {"data": data, "mime_type": "audio/pcm"}
-                        )
-                    except asyncio.QueueFull:
-                        pass  # drop frame rather than block
+                    if self._agent_ws:
+                        try:
+                            b64 = base64.b64encode(data).decode('ascii')
+                            await self._agent_ws.send_json({"type": "phone_audio", "data": b64})
+                        except Exception:
+                            pass
+                    else:
+                        try:
+                            self._phone_audio_queue.put_nowait(
+                                {"data": data, "mime_type": "audio/pcm"}
+                            )
+                        except asyncio.QueueFull:
+                            pass
             except WebSocketDisconnect:
                 pass
             finally:
@@ -821,6 +1111,11 @@ class DashboardServer:
                 return
             await websocket.accept()
             self._clients.add(websocket)
+            current_state = "active" if self._jarvis_active else "standby"
+            try:
+                await websocket.send_json({"type": "status", "state": current_state})
+            except Exception:
+                pass
             for entry in self._history[-50:]:
                 try:
                     await websocket.send_json(entry)
@@ -833,9 +1128,18 @@ class DashboardServer:
                         enc = data.get("enc", "")
                         t   = self._decrypt(tok, enc) if enc else (data.get("text") or "").strip()
                         if t:
-                            await self._command_queue.put(t)
-                            if self._wake_callback:
-                                self._wake_callback()
+                            if self._agent_ws:
+                                try:
+                                    await self._agent_ws.send_json({"type": "command", "text": t})
+                                except Exception:
+                                    self._agent_ws = None
+                                    self._jarvis_active = False
+                                    asyncio.create_task(self._execute_offline_command(t))
+                            else:
+                                await self._command_queue.put(t)
+                                if self._wake_callback:
+                                    self._wake_callback()
+                                asyncio.create_task(self._execute_offline_command(t))
             except WebSocketDisconnect:
                 pass
             finally:
@@ -882,3 +1186,34 @@ class DashboardServer:
         print(f"[Dashboard] Phone Web App: http://{self._ip}:{PORT}")
         print("[Dashboard] Click 'CONNECT PHONE' in JARVIS or ask 'Connect to my phone' for QR code.")
         await uvicorn.Server(cfg).serve()
+
+
+# ── Daemon Detection & Factory ───────────────────────────────────────────────
+
+def is_daemon_running(host: str = "127.0.0.1", port: int = PORT) -> bool:
+    """Check if the JARVIS background dashboard service is running."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://{host}:{port}/api/daemon-status", timeout=0.4) as resp:
+            if resp.status == 200:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data.get("ok") is True
+    except Exception:
+        pass
+    return False
+
+
+def get_dashboard(connect_callback=None):
+    """Return DashboardClientProxy if daemon is running, else DashboardServer."""
+    if is_daemon_running():
+        from dashboard.client import DashboardClientProxy
+        print("[Dashboard] Background service detected on port 8000 -> connecting as client.")
+        proxy = DashboardClientProxy()
+        if connect_callback:
+            proxy.set_connect_callback(connect_callback)
+        return proxy
+    print("[Dashboard] No background service detected -> starting embedded server.")
+    server = DashboardServer()
+    if connect_callback:
+        server.set_connect_callback(connect_callback)
+    return server
