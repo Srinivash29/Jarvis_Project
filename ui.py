@@ -51,8 +51,8 @@ def _read_full_config() -> dict:
         return {}
 
 
-_DEFAULT_W, _DEFAULT_H = 1120, 790
-_MIN_W,     _MIN_H     = 960, 680
+_DEFAULT_W, _DEFAULT_H = 1536, 960
+_MIN_W,     _MIN_H     = 1180, 720
 _LEFT_W  = 195
 _RIGHT_W = 345
 
@@ -2403,12 +2403,14 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle(f"{_display} — MARK LI")
         self.setMinimumSize(_MIN_W, _MIN_H)
-        self.resize(_DEFAULT_W, _DEFAULT_H)
 
         screen = QApplication.primaryScreen().availableGeometry()
+        target_w = min(_DEFAULT_W, max(_MIN_W, int(screen.width() * 0.94)))
+        target_h = min(_DEFAULT_H, max(_MIN_H, int(screen.height() * 0.90)))
+        self.resize(target_w, target_h)
         self.move(
-            (screen.width()  - _DEFAULT_W) // 2,
-            (screen.height() - _DEFAULT_H) // 2,
+            (screen.width()  - target_w) // 2,
+            (screen.height() - target_h) // 2,
         )
 
         self.on_text_command   = None
@@ -3172,28 +3174,30 @@ class MainWindow(QMainWindow):
 
         self._net_ip_lbl.setText(str(ip))
 
+
     def _hud_panel(self, title: str, parent=None) -> tuple[QWidget, QVBoxLayout]:
         w = QWidget(parent)
         w.setObjectName("HudPanel")
         w.setStyleSheet(f"""
             QWidget#HudPanel {{
-                background: rgba(3, 12, 24, 235);
+                background: rgba(2, 10, 20, 242);
                 border: 1px solid {C.BORDER_B};
-                border-radius: 8px;
+                border-radius: 9px;
             }}
         """)
         lay = QVBoxLayout(w)
-        lay.setContentsMargins(10, 8, 10, 8)
-        lay.setSpacing(6)
+        lay.setContentsMargins(12, 9, 12, 9)
+        lay.setSpacing(7)
         hdr = QHBoxLayout()
         lbl = QLabel(f"›  {title}")
-        lbl.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
-        lbl.setStyleSheet(f"color: {C.PRI}; background: transparent; letter-spacing: 1px;")
+        lbl.setFont(QFont("Courier New", 10, QFont.Weight.Bold))
+        lbl.setStyleSheet(
+            f"color: {C.PRI}; background: transparent; letter-spacing: 1px;"
+        )
         hdr.addWidget(lbl)
         hdr.addStretch()
         lay.addLayout(hdr)
         return w, lay
-
     def _build_reference_activity_panel(self) -> QWidget:
         w, lay = self._hud_panel("ACTIVITY LOGS")
         w.setMinimumWidth(260)
@@ -3337,58 +3341,81 @@ class MainWindow(QMainWindow):
             l.addWidget(b, stretch=1)
         return w
 
+
     def _build_reference_command_bar(self) -> QWidget:
         w = QWidget()
-        w.setFixedHeight(58)
+        w.setFixedHeight(72)
         w.setStyleSheet(f"""
-            background: rgba(2,10,19,245);
-            border: 1px solid {C.BORDER_B};
-            border-radius: 8px;
+            QWidget {{
+                background: rgba(2, 10, 19, 248);
+                border: 1px solid {C.BORDER_B};
+                border-radius: 9px;
+            }}
         """)
         l = QHBoxLayout(w)
-        l.setContentsMargins(8, 7, 8, 7)
-        l.setSpacing(7)
+        l.setContentsMargins(10, 8, 10, 8)
+        l.setSpacing(9)
+
         self._center_mic_badge = QPushButton("🎙")
-        self._center_mic_badge.setFixedSize(42, 42)
-        self._center_mic_badge.setFont(QFont("Segoe UI Emoji" if _OS == "Windows" else "Arial", 14))
+        self._center_mic_badge.setFixedSize(50, 50)
+        self._center_mic_badge.setFont(QFont("Segoe UI Emoji" if _OS == "Windows" else "Arial", 17))
         self._center_mic_badge.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._center_mic_badge.setStyleSheet(f"background: rgba(0,210,255,0.10); color: {C.PRI}; border: 1px solid {C.PRI}; border-radius: 21px;")
+        self._center_mic_badge.setStyleSheet(
+            f"background: rgba(0,210,255,0.10); color: {C.PRI}; "
+            f"border: 2px solid {C.PRI}; border-radius: 25px;"
+        )
         self._center_mic_badge.clicked.connect(self._toggle_mute)
         l.addWidget(self._center_mic_badge)
+
         info = QVBoxLayout()
-        info.setSpacing(0)
+        info.setSpacing(1)
         self._center_voice_lbl = QLabel("Listening...")
-        self._center_voice_lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        self._center_voice_lbl.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
         self._center_voice_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent;")
         hint = QLabel('Say "Hey Jarvis" or type a command')
         hint.setFont(QFont("Courier New", 6))
         hint.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
         info.addWidget(self._center_voice_lbl)
         info.addWidget(hint)
-        l.addLayout(info, stretch=0)
+        l.addLayout(info)
 
         self._input = QLineEdit()
         self._input.setPlaceholderText("Type a command...")
         self._input.setFont(QFont("Courier New", 8))
-        self._input.setFixedHeight(36)
+        self._input.setFixedHeight(40)
         self._input.setStyleSheet(f"""
             QLineEdit {{
-                background: #020814; color: {C.WHITE};
-                border: 1px solid {C.BORDER}; border-radius: 5px; padding: 4px 9px;
+                background: rgba(0, 5, 12, 220);
+                color: {C.WHITE};
+                border: 1px solid {C.BORDER};
+                border-radius: 6px;
+                padding: 4px 10px;
             }}
-            QLineEdit:focus {{ border-color: {C.PRI}; }}
+            QLineEdit:focus {{
+                border-color: {C.PRI};
+                background: rgba(0, 10, 20, 235);
+            }}
         """)
         self._input.returnPressed.connect(self._send)
-        l.addWidget(self._input, stretch=1)
+        l.addWidget(self._input, 1)
+
+        waveform = QLabel("〰〰〰〰〰")
+        waveform.setFont(QFont("Courier New", 13, QFont.Weight.Bold))
+        waveform.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        waveform.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        l.addWidget(waveform)
+
         send = QPushButton("➤")
-        send.setFixedSize(38, 36)
-        send.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
+        send.setFixedSize(42, 40)
+        send.setFont(QFont("Courier New", 14, QFont.Weight.Bold))
         send.setCursor(Qt.CursorShape.PointingHandCursor)
-        send.setStyleSheet(f"background: rgba(0,210,255,0.12); color: {C.PRI}; border: 1px solid {C.PRI}; border-radius: 5px;")
+        send.setStyleSheet(
+            f"background: rgba(0,210,255,0.12); color: {C.PRI}; "
+            f"border: 1px solid {C.PRI}; border-radius: 6px;"
+        )
         send.clicked.connect(self._send)
         l.addWidget(send)
         return w
-
     def _build_reference_system_panel(self) -> QWidget:
         w, lay = self._hud_panel("SYSTEM MONITOR")
         w.setMinimumWidth(280)
@@ -3519,105 +3546,139 @@ class MainWindow(QMainWindow):
             row.addWidget(name, 1); row.addWidget(val)
             self._apps_layout.addLayout(row)
 
+
     def _build_header(self) -> QWidget:
         w = QWidget()
-        w.setFixedHeight(54)
-        w.setStyleSheet(f"background: {C.DARK}; border-bottom: 1px solid {C.BORDER_B};")
+        w.setFixedHeight(78)
+        w.setStyleSheet(f"""
+            QWidget {{
+                background: rgba(1, 7, 15, 248);
+                border: 1px solid {C.BORDER};
+                border-radius: 10px;
+            }}
+        """)
         lay = QHBoxLayout(w)
-        lay.setContentsMargins(14, 0, 16, 0)
-        lay.setSpacing(10)
+        lay.setContentsMargins(16, 8, 16, 8)
+        lay.setSpacing(12)
 
-        # ── Left: Iron Man Emblem + Title & Subtitle ──
-        self._emblem = IronManEmblem(34)
+        self._emblem = IronManEmblem(58)
         lay.addWidget(self._emblem)
 
-        left_title_box = QVBoxLayout()
-        left_title_box.setSpacing(1)
+        left = QVBoxLayout()
+        left.setSpacing(0)
         disp = self._assistant_name.upper()
+
         self._title_lbl = QLabel(disp)
-        self._title_lbl.setFont(QFont("Courier New", 14, QFont.Weight.Bold))
-        self._title_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent; letter-spacing: 2px;")
-        sub_text = ("Just A Rather Very Intelligent System"
+        self._title_lbl.setFont(QFont("Courier New", 25, QFont.Weight.Bold))
+        self._title_lbl.setStyleSheet(
+            f"color: {C.PRI}; background: transparent; letter-spacing: 8px;"
+        )
+        sub_text = ("JUST A RATHER VERY INTELLIGENT SYSTEM"
                     if disp in ("JARVIS", "J.A.R.V.I.S")
-                    else "Personal AI Assistant")
+                    else "PERSONAL AI ASSISTANT")
         self._sub_lbl = QLabel(sub_text)
-        self._sub_lbl.setFont(QFont("Courier New", 7))
-        self._sub_lbl.setStyleSheet(f"color: {C.PRI_DIM}; background: transparent;")
-        left_title_box.addWidget(self._title_lbl)
-        left_title_box.addWidget(self._sub_lbl)
-        lay.addLayout(left_title_box)
+        self._sub_lbl.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        self._sub_lbl.setStyleSheet(
+            f"color: {C.TEXT_MED}; background: transparent; letter-spacing: 2px;"
+        )
+        left.addWidget(self._title_lbl)
+        left.addWidget(self._sub_lbl)
+        lay.addLayout(left)
 
-        lay.addStretch(1)
+        center = QWidget()
+        center.setStyleSheet(
+            f"background: rgba(2, 12, 23, 180); border: 1px solid {C.BORDER}; border-radius: 8px;"
+        )
+        cl = QHBoxLayout(center)
+        cl.setContentsMargins(14, 6, 14, 6)
+        cl.setSpacing(12)
 
-        # ── Center: Sci-Fi HUD Motto ──
-        hud_motto = QLabel("ANALYZE   /   ASSIST   /   AUTOMATE   /   EVOLVE")
-        hud_motto.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hud_motto.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
-        hud_motto.setStyleSheet(f"color: {C.PRI}; background: transparent; letter-spacing: 3px;")
-        lay.addWidget(hud_motto)
+        pulse = QLabel("∿")
+        pulse.setFont(QFont("Courier New", 25, QFont.Weight.Bold))
+        pulse.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        cl.addWidget(pulse)
 
-        lay.addStretch(1)
+        greeting = QVBoxLayout()
+        greeting.setSpacing(0)
+        cfg = _read_full_config()
+        user_name = (cfg.get("user_name") or "").strip() or "Sir"
+        self._greeting_lbl = QLabel(f"Good Morning, {user_name}")
+        self._greeting_lbl.setFont(QFont("Courier New", 10, QFont.Weight.Bold))
+        self._greeting_lbl.setStyleSheet(f"color: {C.TEXT}; background: transparent;")
+        ready = QLabel("System online. Ready for your command.")
+        ready.setFont(QFont("Courier New", 7))
+        ready.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        greeting.addWidget(self._greeting_lbl)
+        greeting.addWidget(ready)
+        cl.addLayout(greeting, 1)
+        lay.addWidget(center, 1)
 
-        # ── Right: Wifi + Settings Gear + Phone Button + Clock ──
-        self._wifi_icon = WifiIcon(22)
-        lay.addWidget(self._wifi_icon)
+        right = QHBoxLayout()
+        right.setSpacing(7)
+
+        date_col = QVBoxLayout()
+        date_col.setSpacing(0)
+        self._date_lbl = QLabel("")
+        self._date_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self._date_lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        self._date_lbl.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
+        self._clock_lbl = QLabel("00:00:00")
+        self._clock_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self._clock_lbl.setFont(QFont("Courier New", 21, QFont.Weight.Bold))
+        self._clock_lbl.setStyleSheet(f"color: {C.TEXT}; background: transparent; letter-spacing: 2px;")
+        date_col.addWidget(self._date_lbl)
+        date_col.addWidget(self._clock_lbl)
+        right.addLayout(date_col)
+
+        self._wifi_icon = WifiIcon(25)
+        right.addWidget(self._wifi_icon)
 
         self._drawer_btn = QPushButton("⚙")
-        self._drawer_btn.setFixedSize(28, 28)
-        self._drawer_btn.setFont(QFont("Courier New", 12))
+        self._drawer_btn.setFixedSize(34, 34)
+        self._drawer_btn.setFont(QFont("Courier New", 15))
         self._drawer_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._drawer_btn.setToolTip("Settings & Controls")
+        self._drawer_btn.setCheckable(True)
         self._drawer_btn.setStyleSheet(f"""
             QPushButton {{
-                background: transparent; color: {C.TEXT_MED};
-                border: 1px solid {C.BORDER}; border-radius: 4px;
+                background: rgba(0, 210, 255, 0.04);
+                color: {C.TEXT_MED};
+                border: 1px solid {C.BORDER};
+                border-radius: 6px;
             }}
-            QPushButton:hover {{ color: {C.PRI}; border-color: {C.PRI_DIM}; background: {C.PRI_GHO}; }}
-            QPushButton:checked {{ color: {C.PRI}; border-color: {C.PRI}; background: {C.PRI_GHO}; }}
+            QPushButton:hover, QPushButton:checked {{
+                color: {C.PRI};
+                border-color: {C.PRI};
+                background: rgba(0,210,255,0.12);
+            }}
         """)
-        self._drawer_btn.setCheckable(True)
         self._drawer_btn.clicked.connect(self._toggle_drawer)
-        lay.addWidget(self._drawer_btn)
+        right.addWidget(self._drawer_btn)
 
-        self._phone_btn = QPushButton("📱")
-        self._phone_btn.setFixedSize(28, 28)
-        self._phone_btn.setFont(QFont("Segoe UI Emoji" if _OS == "Windows" else "Arial", 11))
+        self._phone_btn = QPushButton("◉")
+        self._phone_btn.setFixedSize(34, 34)
+        self._phone_btn.setFont(QFont("Courier New", 13))
         self._phone_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._phone_btn.setToolTip("Connect Phone Dashboard")
         self._phone_btn.setStyleSheet(f"""
             QPushButton {{
-                background: rgba(0, 210, 255, 0.08);
+                background: rgba(0, 210, 255, 0.04);
                 color: {C.PRI};
                 border: 1px solid {C.BORDER};
-                border-radius: 4px;
+                border-radius: 6px;
             }}
-            QPushButton:hover {{ background: rgba(0, 210, 255, 0.22); border-color: {C.PRI}; }}
+            QPushButton:hover {{ background: rgba(0,210,255,0.14); border-color: {C.PRI}; }}
         """)
         self._phone_btn.clicked.connect(self._open_remote)
-        lay.addWidget(self._phone_btn)
+        right.addWidget(self._phone_btn)
 
         self._phone_status_badge = QLabel("")
-        self._phone_status_badge.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        self._phone_status_badge.setFont(QFont("Courier New", 6, QFont.Weight.Bold))
         self._phone_status_badge.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
-        lay.addWidget(self._phone_status_badge)
+        right.addWidget(self._phone_status_badge)
 
-        right_col = QVBoxLayout()
-        right_col.setSpacing(1)
-        self._clock_lbl = QLabel("00:00:00")
-        self._clock_lbl.setFont(QFont("Courier New", 14, QFont.Weight.Bold))
-        self._clock_lbl.setStyleSheet(f"color: {C.ACC}; background: transparent; letter-spacing: 1px;")
-        self._clock_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
-        right_col.addWidget(self._clock_lbl)
-
-        self._date_lbl = QLabel("")
-        self._date_lbl.setFont(QFont("Courier New", 7))
-        self._date_lbl.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
-        self._date_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
-        right_col.addWidget(self._date_lbl)
-        lay.addLayout(right_col)
-
+        lay.addLayout(right)
         return w
-
     def _tick_clock(self):
         self._clock_lbl.setText(time.strftime("%I:%M %p"))
         self._date_lbl.setText(time.strftime("%a, %d %b %Y"))
@@ -4147,22 +4208,30 @@ class MainWindow(QMainWindow):
             total = self._center_split.height()
             self._center_split.setSizes([max(total - 220, 120), 220])
 
+
     def _build_footer(self) -> QWidget:
         w = QWidget()
-        w.setFixedHeight(22)
-        w.setStyleSheet(f"background: {C.DARK}; border-top: 1px solid {C.BORDER};")
-        lay = QHBoxLayout(w); lay.setContentsMargins(14, 0, 14, 0)
+        w.setFixedHeight(24)
+        w.setStyleSheet(f"""
+            QWidget {{
+                background: rgba(1, 7, 15, 248);
+                border: 1px solid {C.BORDER};
+                border-radius: 6px;
+            }}
+        """)
+        lay = QHBoxLayout(w)
+        lay.setContentsMargins(14, 0, 14, 0)
 
         def _fl(txt, color=C.TEXT_MED):
-            l = QLabel(txt); l.setFont(QFont("Courier New", 7))
+            l = QLabel(txt)
+            l.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
             l.setStyleSheet(f"color: {color}; background: transparent;")
             return l
 
-        lay.addWidget(_fl("[F4] Mute  ·  [F11] Fullscreen"))
+        lay.addWidget(_fl("JARVIS v2.0.0  |  BUILD 2025.10.08", C.TEXT_MED))
         lay.addStretch()
-        lay.addWidget(_fl("By FatihMakes", C.PRI_DIM))
+        lay.addWidget(_fl("[F4] MUTE  ·  [F11] FULLSCREEN", C.PRI_DIM))
         return w
-
     def _on_file_selected(self, path: str):
         self._current_file = path
         p    = Path(path)
